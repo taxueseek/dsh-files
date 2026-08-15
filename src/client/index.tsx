@@ -9,15 +9,68 @@ import { Tooltip, IconPaperclipOutline16, IconCloseOutline16 } from '@deepseek-a
 const SOURCE_NAME = 'dsh-files'
 const STYLE_TAG = 'dsh-files/style.css'
 
+/** Pasting at or above this many characters triggers the save-to-file flow. */
+const PASTE_MIN_CHARS = 4000
+
+/** Overridable via localStorage `dsh.files.pasteMinChars`. */
+function pasteMinChars(): number {
+  try {
+    const raw = Number(localStorage.getItem('dsh.files.pasteMinChars'))
+    if (Number.isFinite(raw) && raw >= 1) return raw
+  } catch {
+    // storage unavailable
+  }
+  return PASTE_MIN_CHARS
+}
+
 interface UploadMeta {
   name: string
   bytes: number
+}
+
+interface PendingPaste {
+  text: string
+  caret: number
+  seq: number
 }
 
 const uploadMeta = new Map<string, UploadMeta>()
 let uploadError: { seq: number; text: string } | null = null
 let errorSeq = 0
 const errorListeners = new Set<() => void>()
+
+const pendingPastes = new Map<number, PendingPaste>()
+let pendingSeq = 0
+const pendingListeners = new Set<() => void>()
+// useSyncExternalStore requires a cached snapshot reference: emit a new array
+// only when the set changes, otherwise React re-renders forever.
+let pendingSnapshot: PendingPaste[] = []
+
+function publishPending(): void {
+  pendingSnapshot = [...pendingPastes.values()]
+  for (const listener of pendingListeners) listener()
+}
+
+function subscribePending(listener: () => void): () => void {
+  pendingListeners.add(listener)
+  return () => {
+    pendingListeners.delete(listener)
+  }
+}
+
+function getPendingSnapshot(): PendingPaste[] {
+  return pendingSnapshot
+}
+
+function setPending(paste: PendingPaste): void {
+  pendingPastes.set(paste.seq, paste)
+  publishPending()
+}
+
+function clearPending(seq: number): void {
+  pendingPastes.delete(seq)
+  publishPending()
+}
 
 function subscribeErrors(listener: () => void): () => void {
   errorListeners.add(listener)
@@ -78,6 +131,18 @@ function injectCss(): void {
 .dsh-files-card>.dsh-files-remove{position:absolute;top:4px;right:4px}
 .dsh-files-error{display:inline-flex;align-items:center;gap:8px;max-width:100%;border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(127,127,127,.22));background:var(--dsw-alias-interactive-bg-hover-danger,rgba(216,97,97,.14));color:var(--dsw-alias-state-error-primary,#d86161);border-radius:10px;padding:6px 8px 6px 10px;font-size:13px}
 .dsh-files-error-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px}
+.dsh-files-paste{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(127,127,127,.22));background:var(--dsw-specific-input-major,var(--dsw-alias-surface-2,rgba(127,127,127,.08)));border-radius:12px;padding:10px 12px;color:var(--dsw-alias-label-primary,inherit)}
+.dsh-files-paste-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dsh-files-paste-title{font-size:13px;font-weight:600;flex:none}
+.dsh-files-paste-char{font-size:12px;color:var(--dsw-alias-label-tertiary,inherit);flex:none}
+.dsh-files-paste-preview{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary,inherit);max-height:84px;overflow:hidden;white-space:pre-wrap;word-break:break-word;margin-bottom:8px;border-left:3px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(127,127,127,.22));padding-left:8px}
+.dsh-files-paste-row{display:flex;align-items:center;gap:8px}
+.dsh-files-paste-save{border:none;background:var(--dsw-alias-interactive-bg-primary,#2f6feb);color:#fff;cursor:pointer;border-radius:8px;padding:5px 12px;font-size:13px;font-weight:600;flex:none}
+.dsh-files-paste-save:hover{filter:brightness(1.08)}
+.dsh-files-paste-keep{border:1px solid var(--dsw-alias-border-l2-darkmode-thin,rgba(127,127,127,.22));background:transparent;color:var(--dsw-alias-label-primary,inherit);cursor:pointer;border-radius:8px;padding:4px 12px;font-size:13px;flex:none}
+.dsh-files-paste-keep:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
+.dsh-files-paste-remove{border:none;background:transparent;color:var(--dsw-alias-label-tertiary,inherit);cursor:pointer;padding:2px;border-radius:4px;display:inline-flex;line-height:0;flex:none;margin-left:auto}
+.dsh-files-paste-remove:hover{color:var(--dsw-alias-label-primary,inherit);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}
 .uV2eYG_chip:has(> .uV2eYG_chipLabel:empty){visibility:hidden}
 `
   document.head.appendChild(tag)
@@ -160,6 +225,73 @@ async function attachFile(actx: ActionContext, file: File, sessionId: string): P
   }
 }
 
+/** POST pasted text to the host, which persists it into the session workspace. */
+async function savePastedText(actx: ActionContext, text: string, sessionId: string): Promise<string> {
+  const res = await fetch('/api/paste-text', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-session-id': sessionId
+    },
+    body: JSON.stringify({ text })
+  })
+  if (!res.ok) {
+    let detail = httpErrorText(res.status)
+    try {
+      const payload = (await res.json()) as { error?: string }
+      if (typeof payload.error === 'string') detail = payload.error
+    } catch {
+      // keep the status-based message
+    }
+    throw new Error(detail)
+  }
+  const payload = (await res.json()) as { path: string; name?: string; bytes?: number }
+  if (typeof payload.path !== 'string') throw new Error('missing path in response')
+  uploadMeta.set(payload.path, { name: payload.name ?? nameFromPath(payload.path), bytes: payload.bytes ?? 0 })
+  return payload.path
+}
+
+/**
+ * Mint the pasted-text occurrence chip at the caret and prefix a pointer line
+ * into the draft so the model knows the long text lives in a file it can read
+ * with read_document. Returns true when the occurrence was inserted.
+ */
+function insertPasteReference(
+  actx: ActionContext,
+  path: string,
+  caret: number,
+  setDraft: (text: string) => void
+): boolean {
+  const conversation = actx.get('conversation')
+  if (conversation === undefined) return false
+  const input = conversation.input.for(actx)
+  const state = input.state.getSnapshot()
+  actx.emit('slash/input-insert-reference', {
+    reference: {
+      source: SOURCE_NAME,
+      ref: path,
+      label: '',
+      clipboardText: path
+    },
+    span: {
+      start: caret,
+      end: caret,
+      draftRev: state.draftRev
+    }
+  })
+  const after = input.state.getSnapshot()
+  const occ = after.occurrences.find((o) => o.source === SOURCE_NAME && o.ref === path)
+  if (occ === undefined) {
+    setUploadError(`文本已保存但未能加入输入框: ${path}`)
+    return false
+  }
+  const pointer = `[已粘贴长文本，已保存为文件: ${path}]\n`
+  const draftWithChip = after.draft
+  const next = draftWithChip.slice(0, occ.offset) + pointer + draftWithChip.slice(occ.offset)
+  setDraft(next)
+  return true
+}
+
 interface UploadButtonProps {
   attach: (file: File) => Promise<void>
 }
@@ -205,11 +337,26 @@ function UploadButton({ attach }: UploadButtonProps) {
 interface DockProps {
   useInput?: (selector: (s: InputSnapshot) => InputSnapshot) => InputSnapshot | null
   inputActions?: { setDraft(text: string): void }
+  savePaste?: (text: string) => Promise<string>
+  actx?: ActionContext
 }
 
-function UploadDock({ useInput, inputActions }: DockProps) {
+/** The composer textarea is the only plain-text paste sink we intercept. */
+function isComposerPasteTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  if (el === null || typeof el.closest !== 'function') return false
+  return el.closest('[data-composer-card] textarea') !== null
+}
+
+function pastePreview(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim()
+  return compact.length > 200 ? `${compact.slice(0, 200)}…` : compact
+}
+
+function UploadDock({ useInput, inputActions, savePaste, actx }: DockProps) {
   const state = useInput?.((s) => s) ?? null
   const error = useSyncExternalStore(subscribeErrors, () => uploadError)
+  const pending = useSyncExternalStore(subscribePending, getPendingSnapshot)
   const ours = (state?.occurrences ?? []).filter((o) => o.source === SOURCE_NAME)
   const refs = ours.map((o) => o.ref).join('\n')
 
@@ -220,7 +367,43 @@ function UploadDock({ useInput, inputActions }: DockProps) {
     }
   }, [refs, ours])
 
-  if (ours.length === 0 && error === null) return null
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!isComposerPasteTarget(e.target)) return
+      const text = e.clipboardData?.getData('text/plain') ?? ''
+      if (text.length < pasteMinChars()) return
+      e.preventDefault()
+      e.stopPropagation()
+      const caret = (e.target as HTMLTextAreaElement).selectionStart ?? 0
+      setPending({ text, caret, seq: ++pendingSeq })
+    }
+    document.addEventListener('paste', onPaste, true)
+    return () => document.removeEventListener('paste', onPaste, true)
+  }, [])
+
+  const applyPending = async (paste: PendingPaste) => {
+    if (actx === undefined) {
+      setUploadError('无法保存文本：会话服务不可用')
+      return
+    }
+    try {
+      const path = await savePaste!(paste.text)
+      insertPasteReference(actx, path, paste.caret, inputActions?.setDraft ?? (() => undefined))
+      clearPending(paste.seq)
+    } catch (err) {
+      setUploadError(`长文本保存失败: ${(err as Error)?.message ?? String(err)}`)
+    }
+  }
+
+  const keepText = (paste: PendingPaste) => {
+    const draft = state?.draft ?? ''
+    const next = draft.slice(0, paste.caret) + paste.text + draft.slice(paste.caret)
+    inputActions?.setDraft(next)
+    clearPending(paste.seq)
+  }
+
+  const hasContent = pending.length > 0 || ours.length > 0 || error !== null
+  if (!hasContent) return null
 
   const removeCard = (_occurrenceId: string, ref: string, offset: number) => {
     const draft = state?.draft ?? ''
@@ -232,6 +415,33 @@ function UploadDock({ useInput, inputActions }: DockProps) {
 
   return (
     <div className="dsh-files-dock">
+      {pending.map((paste) => (
+        <div className="dsh-files-paste" key={paste.seq}>
+          <div className="dsh-files-paste-head">
+            <span className="dsh-files-paste-title">检测到长文本粘贴</span>
+            <span className="dsh-files-paste-char">
+              {paste.text.length} 字 · 建议保存为文件后按需读取
+            </span>
+            <button
+              type="button"
+              className="dsh-files-paste-remove"
+              aria-label="忽略"
+              onClick={() => clearPending(paste.seq)}
+            >
+              <IconCloseOutline16 size={12} />
+            </button>
+          </div>
+          <div className="dsh-files-paste-preview">{pastePreview(paste.text)}</div>
+          <div className="dsh-files-paste-row">
+            <button type="button" className="dsh-files-paste-save" onClick={() => void applyPending(paste)}>
+              保存为文件
+            </button>
+            <button type="button" className="dsh-files-paste-keep" onClick={() => keepText(paste)}>
+              仍作为文本粘贴
+            </button>
+          </div>
+        </div>
+      ))}
       {error !== null && (
         <div className="dsh-files-error" role="alert">
           <span className="dsh-files-error-text" title={error.text}>
@@ -318,7 +528,14 @@ export function apply(ctx: {
       {
         name: 'conversation.input.dock',
         id: 'dsh-files-dock',
-        order: 5
+        order: 5,
+        inject: (sessionId: string) => {
+          const actx = ctx.sessions.scope(sessionId)
+          return {
+            actx,
+            savePaste: (text: string) => savePastedText(actx, text, sessionId)
+          }
+        }
       },
       UploadDock
     )

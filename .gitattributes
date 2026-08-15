@@ -1,0 +1,4 @@
+# Normalize line endings: the repository stores LF. Windows checkouts get
+# CRLF only where auto-detected binary content is excluded by *.map below.
+* text=auto
+*.map binary
