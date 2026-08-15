@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { defineReadDocumentTool } from './tool.ts'
 import { createUploadHandler, createSweeper } from './upload.ts'
+import { createPasteTextHandler } from './paste.ts'
 import { ParseCache } from './cache.ts'
 
 /** Cordis plugin name — must match the row id in cordis.patch.yml. */
@@ -35,6 +36,8 @@ export interface DocsConfig {
   sweepIntervalMs: number
   maxConcurrentUploads: number
   uploadDir: string
+  pasteMaxBytes: number
+  pasteMinChars: number
 }
 
 export const Config = z.object({
@@ -61,7 +64,11 @@ export const Config = z.object({
   /** Concurrent upload bodies admitted at once. */
   maxConcurrentUploads: z.number().default(4),
   /** Upload storage root; files land in <root>/.dsh-filess/<sessionId>/. */
-  uploadDir: z.string().default(join(process.cwd(), 'uploads'))
+  uploadDir: z.string().default(join(process.cwd(), 'uploads')),
+  /** Byte cap for one pasted-text payload (UTF-8). */
+  pasteMaxBytes: z.number().default(8 * MEBIBYTE),
+  /** Pasting text at or above this many characters triggers the save-to-file flow. */
+  pasteMinChars: z.number().default(4000)
 })
 
 function assertPositiveInteger(value: number, label: string): void {
@@ -79,7 +86,9 @@ export function apply(ctx: any, config: DocsConfig): void {
     ['uploadMaxBytes', config.uploadMaxBytes],
     ['uploadTtlMs', config.uploadTtlMs],
     ['sweepIntervalMs', config.sweepIntervalMs],
-    ['maxConcurrentUploads', config.maxConcurrentUploads]
+    ['maxConcurrentUploads', config.maxConcurrentUploads],
+    ['pasteMaxBytes', config.pasteMaxBytes],
+    ['pasteMinChars', config.pasteMinChars]
   ] as const) {
     assertPositiveInteger(value, label)
   }
@@ -116,6 +125,22 @@ export function apply(ctx: any, config: DocsConfig): void {
         ttlMs: config.uploadTtlMs,
         sweepIntervalMs: config.sweepIntervalMs,
         maxConcurrent: config.maxConcurrentUploads,
+        defaultDir,
+        sessionCwd: (sessionId) => {
+          const session = ctx.sessions.get(sessionId)
+          return session === undefined ? undefined : session.header.cwd
+        }
+      })
+    })
+  )
+
+  ctx.effect(() =>
+    ctx.webServer.register({
+      kind: 'prefix',
+      path: '/api/paste-text',
+      handler: createPasteTextHandler({
+        maxBytes: config.pasteMaxBytes,
+        minChars: config.pasteMinChars,
         defaultDir,
         sessionCwd: (sessionId) => {
           const session = ctx.sessions.get(sessionId)

@@ -1,8 +1,9 @@
 # dsh-files
 
-DeepSeek Harness 双面插件（dual-face plugin）：一个包、一行 cordis 配置，为 Web UI 提供「文件上传」与「文档读取」两项能力。
+DeepSeek Harness 双面插件（dual-face plugin）：一个包、一行 cordis 配置，为 Web UI 提供「文件上传」「长文本粘贴转文件」与「文档读取」三项能力。
 
 - **上传**：输入框工具栏回形针按钮，文件以浮动彩色卡片呈现，发送时自动把路径附入消息；按会话隔离存储到 `<会话工作区>/.dsh-filess/<sessionId>/`，TTL 定期清扫，sha256 内容去重
+- **长文本粘贴转文件**：在输入框粘贴超过阈值的长文本时自动拦截，一键保存为会话内文件并把路径作为引用随消息发出，模型按需用 `read_document` 读取，避免长文本膨胀上下文
 - **文档读取**：`read_document` 工具读取文本 / PDF / DOCX / XLSX，内容嗅探判定真实格式（不信任扩展名），大小预检，LRU 解析缓存
 
 ## 功能
@@ -14,6 +15,14 @@ DeepSeek Harness 双面插件（dual-face plugin）：一个包、一行 cordis 
 - 发送联动：卡片挂载后文件路径自动注入输入框，随消息发出
 - 安全护栏：loopback host + same-origin + sec-fetch-site 三重校验；文件名消毒（控制字符、路径分隔、点段、前导点全部剥离）；未知会话 403；并发限流（默认 4）超限 429
 - 生命周期管理：TTL 清扫（默认 7 天），空会话目录自动回收
+
+### 长文本粘贴转文件
+
+- 拦截条件：在 composer 内粘贴的纯文本达到 `pasteMinChars`（默认 4000 字符）即弹出「保存为文件 / 仍作为文本粘贴」确认卡
+- 保存落盘：文本经 `POST /api/paste-text` 写入发起会话的工作区 `.dsh-filess/<sessionId>/`，内容寻址（sha256）去重，字节上限 `pasteMaxBytes`（默认 8 MB）
+- 引用联动：保存后输入框插入文件路径引用，随消息发出；模型用 `read_document` 按需读取，长文本不再整体进入上下文
+- 安全同上传：loopback host + same-origin + sec-fetch-site 校验，未知会话 403，文件名消毒
+- 阈值可调：浏览器 `localStorage.setItem('dsh.files.pasteMinChars', '8000')` 可覆盖默认触发阈值
 
 ### 文档读取
 
@@ -56,13 +65,15 @@ dsh plugin --profile web add dsh-files
     sweepIntervalMs: 3600000      # 清扫间隔
     maxConcurrentUploads: 4       # 并发上传数
     uploadDir: /abs/path          # 无 sessions 服务时的回退上传根目录
+    pasteMaxBytes: 8388608        # 单次粘贴文本 UTF-8 字节上限
+    pasteMinChars: 4000           # 触发「保存为文件」的粘贴字符阈值
 ```
 
 ## 开发
 
 ```sh
 pnpm install
-pnpm test          # node --test 单元测试（39 项）
+pnpm test          # node --test 单元测试（45 项）
 pnpm build         # esbuild 打包客户端 bundle
 npx tsc --noEmit   # 类型检查
 ```

@@ -37,6 +37,32 @@ export interface UploadOptions {
 
 const LOOPBACK_HOST = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i
 
+/** True when the request passes the loopback/origin/site guards; writes a 403 otherwise. */
+export function guardLoopbackRequest(req: IncomingMessage, res: ServerResponse): boolean {
+  const host = String(req.headers?.host ?? '')
+  if (!LOOPBACK_HOST.test(host)) {
+    res.writeHead(403)
+    res.end('forbidden: non-loopback host')
+    return false
+  }
+  const origin = req.headers?.origin
+  if (origin !== undefined) {
+    const scheme = (req.socket as { encrypted?: boolean })?.encrypted ? 'https' : 'http'
+    if (origin !== `${scheme}://${host}`) {
+      res.writeHead(403)
+      res.end('forbidden: cross-origin')
+      return false
+    }
+  }
+  const secFetchSite = req.headers?.['sec-fetch-site']
+  if (secFetchSite !== undefined && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
+    res.writeHead(403)
+    res.end('forbidden: cross-site')
+    return false
+  }
+  return true
+}
+
 /** Control chars, path separators, dot segments and leading dots stripped. */
 export function sanitizeFileName(raw: string): string {
   const cleaned = raw.replace(/[\u0000-\u001f\u007f]/g, '')
@@ -195,27 +221,7 @@ export function createUploadHandler(options: UploadOptions) {
       res.end('method not allowed')
       return
     }
-    const host = String(req.headers?.host ?? '')
-    if (!LOOPBACK_HOST.test(host)) {
-      res.writeHead(403)
-      res.end('forbidden: non-loopback host')
-      return
-    }
-    const origin = req.headers?.origin
-    if (origin !== undefined) {
-      const scheme = (req.socket as { encrypted?: boolean })?.encrypted ? 'https' : 'http'
-      if (origin !== `${scheme}://${host}`) {
-        res.writeHead(403)
-        res.end('forbidden: cross-origin')
-        return
-      }
-    }
-    const secFetchSite = req.headers?.['sec-fetch-site']
-    if (secFetchSite !== undefined && secFetchSite !== 'same-origin' && secFetchSite !== 'none') {
-      res.writeHead(403)
-      res.end('forbidden: cross-site')
-      return
-    }
+    if (!guardLoopbackRequest(req, res)) return
     if (req.method === 'DELETE') {
       await handleDelete(req, res)
       return
