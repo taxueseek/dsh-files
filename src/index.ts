@@ -11,6 +11,7 @@ import z from '@deepseek-ai/schemastery'
 import { defineReadDocumentTool } from './tool.ts'
 import { createUploadHandler, createSweeper } from './upload.ts'
 import { ParseCache } from './cache.ts'
+import { assertTrustedAuthority } from './guard.ts'
 
 /** Cordis plugin name — must match the row id in cordis.patch.yml. */
 export const name = 'dsh-files'
@@ -37,6 +38,7 @@ export interface DocsConfig {
   maxConcurrentUploads: number
   maxUploadBytesPerSession: number
   uploadDir: string
+  trustedHosts: string[]
 }
 
 export const Config = z.object({
@@ -67,7 +69,14 @@ export const Config = z.object({
   /** Per-session storage byte quota; 0 disables the check. */
   maxUploadBytesPerSession: z.number().default(0),
   /** Upload storage root; files land in <root>/.dsh-filess/<sessionId>/. */
-  uploadDir: z.string().default(join(process.cwd(), 'uploads'))
+  uploadDir: z.string().default(join(process.cwd(), 'uploads')),
+  /**
+   * Non-loopback authorities the upload fence accepts (e.g. the value of
+   * `dsh web --trusted-host` for reverse-tunnel / LAN deployments). Port-less
+   * entries match any port; entries with an explicit port match exactly.
+   * Empty keeps the loopback-only default.
+   */
+  trustedHosts: z.array(z.string()).default([])
 })
 
 function assertPositiveInteger(value: number, label: string): void {
@@ -93,6 +102,7 @@ export function apply(ctx: any, config: DocsConfig): void {
   if (!Number.isInteger(config.maxUploadBytesPerSession) || config.maxUploadBytesPerSession < 0) {
     throw new Error('dsh-files: maxUploadBytesPerSession must be a non-negative integer')
   }
+  for (const entry of config.trustedHosts) assertTrustedAuthority(entry)
 
   const cache = new ParseCache(config.cacheEntries, config.cacheMaxBytes)
 
@@ -133,7 +143,8 @@ export function apply(ctx: any, config: DocsConfig): void {
         maxConcurrent: config.maxConcurrentUploads,
         maxSessionBytes: config.maxUploadBytesPerSession,
         defaultDir,
-        sessionCwd
+        sessionCwd,
+        trustedHosts: config.trustedHosts
       })
     })
   )

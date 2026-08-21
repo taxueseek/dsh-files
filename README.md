@@ -23,7 +23,7 @@ DeepSeek Harness 双面插件（dual-face plugin）。两项能力：
 - 两种入口：输入框工具栏回形针按钮选择，或直接把文件拖到页面任意位置（拖拽悬停有遮罩提示）；多文件横排
 - 浮动彩色卡片：按**字节嗅探的真实格式**着色（PDF 红 / DOC 蓝 / XLS 绿 / TXT 灰），伪装文件（exe 改 .pdf）不按扩展名显示；文件名、大小、移除按钮
 - 发送联动：卡片挂载后文件路径自动注入输入框，随消息发出
-- 安全护栏：loopback host + same-origin + sec-fetch-site 三重校验；文件名消毒（控制字符、路径分隔、点段、前导点全部剥离，并按 UTF-8 字节截断，长中文名不触发 ENAMETOOLONG）；未知会话 403；并发限流（默认 4）超限 429
+- 安全护栏：loopback 或 `trustedHosts` 白名单 host + same-origin + sec-fetch-site 三重校验（与官方 `--trusted-host` 栅栏同语义：Origin 只比较 host 部分，兼容上游终结 TLS 的反向代理/隧道部署）；文件名消毒（控制字符、路径分隔、点段、前导点全部剥离，并按 UTF-8 字节截断，长中文名不触发 ENAMETOOLONG）；未知会话 403；并发限流（默认 4）超限 429
 - 生命周期管理：TTL 清扫（默认 7 天），空会话目录自动回收；可选会话存储配额（`maxUploadBytesPerSession`，超限 507）
 
 ### 文档读取
@@ -73,6 +73,14 @@ dsh plugin --profile web add dsh-files
     maxConcurrentUploads: 4       # 并发上传数
     maxUploadBytesPerSession: 0   # 每会话存储配额（0 = 不限）
     uploadDir: /abs/path          # 无 sessions 服务时的回退上传根目录
+    trustedHosts: []              # 上传栅栏接受的额外 host（与 dsh web --trusted-host 对齐）
+```
+
+`trustedHosts` 用于反向隧道 / 内网穿透 / 局域网部署：GUI 以公网或内网域名访问时，浏览器 `Host` 头携带该域名，默认 loopback-only 栅栏会 403。条目为裸 `host`（匹配任意端口）或 `host:port`（精确匹配），与官方 `/api` 信任栅栏语义一致；非规范写法（路径、userinfo、零填充端口等）在启动时报错。示例：
+
+```yaml
+    trustedHosts:
+      - dsh.example.com
 ```
 
 ## 开发

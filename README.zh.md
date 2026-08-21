@@ -34,6 +34,7 @@ DeepSeek Harness 双面插件。两项能力：
 - 解析库均为维护中无已知漏洞：`pdfjs-dist` / `mammoth` / `read-excel-file`
 - ZIP 探测不展开成员，成员数与名称长度有上限
 - 文件读取走 `ctx.fs`，继承沙箱与观察策略
+- 上传栅栏：loopback 或 `trustedHosts` 白名单 host + same-origin + sec-fetch-site；Origin 只比较 host 部分，兼容上游终结 TLS 的反向代理/隧道部署（配置见 `README.md`）
 
 ## 安装
 

@@ -1,6 +1,6 @@
 // Upload HTTP surface. Security model:
-//   - loopback-only host, same-origin and same-site checks (mirrors the
-//     official dsh-files-button contract)
+//   - loopback or configured trusted host, same-origin and same-site checks
+//     (mirrors the official dsh-files-button contract)
 //   - files land in a per-session directory under the session's own cwd
 //     (`.dsh-filess/<sessionId>`), so the agent's fs backend can always
 //     resolve them and storage is isolated between sessions
@@ -36,6 +36,13 @@ export interface UploadOptions {
   sessionCwd?: (sessionId: string) => string | undefined | Promise<string | undefined>
   /** Fallback storage root when no sessions service is available. */
   defaultDir: string
+  /**
+   * Non-loopback authorities this deployment serves (e.g. the value of
+   * `dsh web --trusted-host`): port-less entries match any port, entries
+   * with an explicit port match exactly. Empty keeps the loopback-only
+   * default.
+   */
+  trustedHosts?: string[]
   now?: () => number
 }
 
@@ -102,6 +109,7 @@ export function createUploadHandler(options: UploadOptions) {
     maxSessionBytes = 0,
     sessionCwd,
     defaultDir,
+    trustedHosts = [],
     now = () => Date.now()
   } = options
 
@@ -275,7 +283,7 @@ export function createUploadHandler(options: UploadOptions) {
       res.end('method not allowed')
       return
     }
-    const denied = networkGuard(req)
+    const denied = networkGuard(req, trustedHosts)
     if (denied !== null) {
       res.writeHead(403)
       res.end(denied)
