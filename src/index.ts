@@ -139,9 +139,19 @@ export function apply(ctx: any, config: DocsConfig): void {
   )
 
   const defaultDir = config.uploadDir ?? join(process.cwd(), 'uploads')
+  // 上传根注册表：每次上传记录其会话 cwd（进程生命周期内）。TTL 清扫的根 =
+  // defaultDir ∪ live 会话 cwd（sessions.list()）∪ 该注册表。有 sessions 服务
+  // 时文件实际落在 <会话工作区>/.dsh-filess/，defaultDir 只是兜底布局；注册表
+  // 兜住「上传后会话已关闭」的清扫盲区（list() 只能看到 live 会话）。
+  const sessionRoots = new Set<string>()
   const sessionCwd = (sessionId: string) => {
     const session = ctx.sessions.get(sessionId)
     return session === undefined ? undefined : session.header.cwd
+  }
+  const uploadSessionCwd = (sessionId: string) => {
+    const cwd = sessionCwd(sessionId)
+    if (cwd !== undefined) sessionRoots.add(cwd)
+    return cwd
   }
   ctx.effect(() =>
     ctx.webServer.register({
@@ -156,12 +166,24 @@ export function apply(ctx: any, config: DocsConfig): void {
         maxSessionBytes: config.maxUploadBytesPerSession,
         trustedHosts: config.trustedHosts,
         defaultDir,
-        sessionCwd
+        sessionCwd: uploadSessionCwd
       })
     })
   )
 
-  const disposeSweeper = createSweeper(defaultDir, config.uploadTtlMs, config.sweepIntervalMs)
+  const disposeSweeper = createSweeper(() => {
+    const roots = new Set<string>([defaultDir])
+    for (const cwd of sessionRoots) roots.add(cwd)
+    try {
+      for (const session of ctx.sessions.list()) {
+        const cwd = session?.header?.cwd
+        if (typeof cwd === 'string' && cwd !== '') roots.add(cwd)
+      }
+    } catch {
+      // sessions 服务不可用时只扫已知根
+    }
+    return [...roots]
+  }, config.uploadTtlMs, config.sweepIntervalMs)
   ctx.on('dispose', disposeSweeper)
 
   // @ 工作区候选端点：只读返回当前会话 cwd 下的相对路径列表。

@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Tooltip, IconPaperclipOutline16, IconCloseOutline16, IconFolderOpenOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { removeTokenFromDraft } from './draft.ts'
 
 const SOURCE_NAME = 'dsh-files'
 const STYLE_TAG = 'dsh-files/style.css'
@@ -12,6 +13,9 @@ const STYLE_TAG = 'dsh-files/style.css'
 // 服务端 maxConcurrentUploads 默认 4：超过会被 429，这里取同值，
 // 避免整批重试；并发不提升网络吞吐，只消除「串行等待」的排队墙钟时间。
 const UPLOAD_CONCURRENCY = 4
+// @ 候选池上限：超大文件夹上传不再无限累积；超限按插入序淘汰最旧条目
+//（只影响 @ 候选列表，草稿里已插入的引用与卡片显示不受影响）。
+const MAX_UPLOADED_POOL = 200
 
 interface UploadMeta {
   name: string
@@ -335,6 +339,11 @@ async function attachFile(actx: ActionContext, file: File, sessionId: string, re
   }
   uploadMeta.set(payload.path, meta)
   uploadedPool.set(payload.path, meta)
+  while (uploadedPool.size > MAX_UPLOADED_POOL) {
+    const oldest = uploadedPool.keys().next().value
+    if (oldest === undefined) break
+    uploadedPool.delete(oldest)
+  }
   clearUploadError()
   const inserted = await insertReference(actx, payload.path, '')
   if (!inserted) {
@@ -497,13 +506,11 @@ function UploadDock({ useInput, inputActions }: DockProps) {
   if (ours.length === 0 && error === null) return null
 
   const removeCard = (ref: string, offset: number) => {
-    // 引用 token 是插入到 draft 的裸路径；occurrence 只给 offset 不给长度，
-    // 所以从 offset 向后扫到空白/行尾，删掉整个 token，而不是只删 1 个字符。
+    // 引用 token 是插入到 draft 的裸路径；occurrence 只给 offset 不给长度。
+    // 优先按 ref 全文精确匹配删除（路径可能含空格，盲扫空白会切一半），
+    // draft 已被编辑对不上时回退为扫到下一个空白。
     const draft = state?.draft ?? ''
-    let end = offset
-    while (end < draft.length && !/\s/.test(draft[end])) end += 1
-    const next = draft.slice(0, offset) + draft.slice(end)
-    inputActions?.setDraft(next)
+    inputActions?.setDraft(removeTokenFromDraft(draft, ref, offset))
     const wasUpload = uploadMeta.has(ref)
     uploadMeta.delete(ref)
     uploadedPool.delete(ref)

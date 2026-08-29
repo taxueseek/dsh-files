@@ -3,7 +3,7 @@
 // and TTL sweeping.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, stat, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -386,4 +386,85 @@ test('readHintFor labels the read cost by size and format', () => {
   const t = readHintFor('text', 10000)
   assert.ok(t.estimatedChars >= 2000 && t.estimatedChars <= 24000)
   assert.equal(readHintFor('pdf', 12345).estimatedChars, 12000)
+})
+
+test('sweep recurses into folder-upload subdirectories and reaps emptied dirs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-files-sweep-nested-'))
+  const deep = join(root, '.dsh-filess', 's1', 'sub', 'dir')
+  await mkdir(deep, { recursive: true })
+  await writeFile(join(deep, 'expired.pdf'), 'x')
+  await utimes(join(deep, 'expired.pdf'), new Date(0), new Date(0))
+  await writeFile(join(root, '.dsh-filess', 's1', 'sub', 'keep.txt'), 'y')
+  const result = await sweep(root, 60_000, () => Date.now())
+  // 嵌套过期文件被回收；清空的 sub/dir 被 reap，sub 因还有 keep.txt 保留。
+  assert.equal(result.removedFiles, 1)
+  assert.equal(result.removedDirs, 1)
+  await assert.rejects(stat(join(deep, 'expired.pdf')), /ENOENT/)
+  await assert.rejects(stat(deep), /ENOENT/)
+  await stat(join(root, '.dsh-filess', 's1', 'sub', 'keep.txt'))
+})
+
+test('sweep skips symlinks and never deletes through them', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-files-sweep-link-'))
+  const outside = await mkdtemp(join(tmpdir(), 'dsh-files-sweep-outside-'))
+  const sessionDir = join(root, '.dsh-filess', 's1')
+  await mkdir(sessionDir, { recursive: true })
+  await writeFile(join(outside, 'precious.txt'), 'keep me')
+  await utimes(join(outside, 'precious.txt'), new Date(0), new Date(0))
+  await symlink(join(outside, 'precious.txt'), join(sessionDir, 'link.txt'))
+  await symlink(outside, join(sessionDir, 'linkdir'))
+  const result = await sweep(root, 60_000, () => Date.now())
+  assert.equal(result.removedFiles, 0)
+  assert.equal(result.removedDirs, 0)
+  // 链接目标（含旧文件）原样保留。
+  await stat(join(outside, 'precious.txt'))
+  await stat(join(sessionDir, 'link.txt'))
+  await stat(join(sessionDir, 'linkdir'))
+})
+
+test('createSweeper accepts a roots function and sweeps every root per tick', async () => {
+  const ws = await mkdtemp(join(tmpdir(), 'dsh-files-sweep-roots-'))
+  const file = join(ws, '.dsh-filess', 's1', 'old.txt')
+  await mkdir(join(ws, '.dsh-filess', 's1'), { recursive: true })
+  await writeFile(file, 'x')
+  await utimes(file, new Date(0), new Date(0))
+  const dispose = createSweeper(() => [ws], 60_000, 10)
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    await assert.rejects(stat(file), /ENOENT/)
+  } finally {
+    dispose()
+  }
+})
+
+test('session quota counts nested folder-upload storage', async () => {
+  const sessionDir = await mkdtemp(join(tmpdir(), 'dsh-files-quota-nested-'))
+  const sessions = new Map([['q1', sessionDir]])
+  // 预置：子目录里已有 500 字节存量（模拟此前文件夹上传）。
+  await mkdir(join(sessionDir, '.dsh-filess', 'q1', 'sub'), { recursive: true })
+  await writeFile(join(sessionDir, '.dsh-filess', 'q1', 'sub', 'blob.bin'), Buffer.alloc(500, 1))
+  // 配额 600：子目录存量 500 + 新传 200 = 700 > 600 → 507（平铺统计会漏判为 200）。
+  await withServer(
+    { maxBytes: 1024 * 1024, allowedExtensions: [], ttlMs: 60_000, sweepIntervalMs: 0, maxConcurrent: 4, maxSessionBytes: 600, defaultDir: await mkdtemp(join(tmpdir(), 'dsh-files-fallback-')), sessionCwd: (id) => sessions.get(id) },
+    async (base) => {
+      const over = await fetch(`${base}/api/upload`, {
+        method: 'POST',
+        headers: { 'x-file-name': encodeURIComponent('b.txt'), 'x-session-id': 'q1' },
+        body: 'x'.repeat(200)
+      })
+      assert.equal(over.status, 507)
+    }
+  )
+  // 配额 1000：500 + 400 = 900 ≤ 1000 → 200，阈值边界正确。
+  await withServer(
+    { maxBytes: 1024 * 1024, allowedExtensions: [], ttlMs: 60_000, sweepIntervalMs: 0, maxConcurrent: 4, maxSessionBytes: 1000, defaultDir: await mkdtemp(join(tmpdir(), 'dsh-files-fallback-')), sessionCwd: (id) => sessions.get(id) },
+    async (base) => {
+      const within = await fetch(`${base}/api/upload`, {
+        method: 'POST',
+        headers: { 'x-file-name': encodeURIComponent('c.txt'), 'x-session-id': 'q1' },
+        body: 'x'.repeat(400)
+      })
+      assert.equal(within.status, 200)
+    }
+  )
 })

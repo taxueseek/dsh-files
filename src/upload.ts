@@ -8,6 +8,7 @@
 //     content dedup, bounded concurrency, TTL sweep
 
 import { createHash } from 'node:crypto'
+import type { Dirent } from 'node:fs'
 import { mkdir, readdir, rmdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -118,6 +119,34 @@ async function fileWithPrefixExists(dir: string, prefix: string): Promise<boolea
   }
 }
 
+/**
+ * Recursive byte total of regular files under `dir` (0 when absent). Folder
+ * uploads store files in subdirectories, so the per-session quota must count
+ * the whole tree, not just the top level. Symlinks are skipped.
+ */
+async function directoryBytes(dir: string): Promise<number> {
+  let entries: Dirent[]
+  try {
+    entries = await readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  let total = 0
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) total += await directoryBytes(path)
+    else if (entry.isFile()) {
+      try {
+        total += (await stat(path)).size
+      } catch {
+        // raced with a DELETE or sweep
+      }
+    }
+  }
+  return total
+}
+
 export function createUploadHandler(options: UploadOptions) {
   const {
     maxBytes,
@@ -201,22 +230,10 @@ export function createUploadHandler(options: UploadOptions) {
         return
       }
       const data = Buffer.concat(chunks)
-      // 会话配额：TTL 周期内每会话文件数有限，readdir+stat 统计可接受。
+      // 会话配额：文件夹上传会把文件存进子目录，统计必须递归整棵树。
       // 检查放在 inflight 内，两个并发请求仍可能同时通过（低风险，TTL 会回收）。
       if (maxSessionBytes > 0) {
-        let used = 0
-        try {
-          const entries = await readdir(storage.dir)
-          for (const entry of entries) {
-            try {
-              used += (await stat(join(storage.dir, entry))).size
-            } catch {
-              // raced with a DELETE or sweep
-            }
-          }
-        } catch {
-          // dir not created yet — nothing stored
-        }
+        const used = await directoryBytes(storage.dir)
         if (used + data.length > maxSessionBytes) {
           res.writeHead(507, { 'content-type': 'application/json' })
           res.end(JSON.stringify({ error: `session upload quota exceeded (${maxSessionBytes} bytes)` }))
@@ -357,17 +374,32 @@ export interface SweepResult {
 }
 
 /**
- * Remove uploaded files older than `ttlMs` and the emptied session
- * directories. Returns a dispose function; safe to call concurrently with
- * uploads (a file written after the sweep's readdir is newer than the sweep
- * window, and unlink failures are ignored).
+ * Periodically sweep one root (string form) or every root a provider returns
+ * (function form). The provider is evaluated per tick so roots discovered at
+ * runtime — live session workspaces, or session cwds recorded while serving
+ * uploads — are picked up without re-registration. Returns a dispose
+ * function; safe to call concurrently with uploads (a file written after the
+ * sweep's readdir is newer than the sweep window, and unlink failures are
+ * ignored).
  */
-export function createSweeper(root: string, ttlMs: number, intervalMs: number, now: () => number = () => Date.now()) {
+export function createSweeper(
+  roots: string | (() => string[]),
+  ttlMs: number,
+  intervalMs: number,
+  now: () => number = () => Date.now()
+) {
   if (intervalMs <= 0) return () => undefined
   const timer = setInterval(() => {
-    void sweep(root, ttlMs, now).catch((err) => {
-      console.error('[dsh-files] upload sweep failed:', err)
-    })
+    void (async () => {
+      const list = typeof roots === 'function' ? roots() : [roots]
+      for (const root of new Set(list)) {
+        try {
+          await sweep(root, ttlMs, now)
+        } catch (err) {
+          console.error('[dsh-files] upload sweep failed:', err)
+        }
+      }
+    })()
   }, intervalMs)
   timer.unref?.()
   return () => clearInterval(timer)
@@ -375,53 +407,50 @@ export function createSweeper(root: string, ttlMs: number, intervalMs: number, n
 
 export async function sweep(root: string, ttlMs: number, now: () => number = () => Date.now()): Promise<SweepResult> {
   const cutoff = now() - ttlMs
-  let removedFiles = 0
-  let removedDirs = 0
-  // Uploaded files live at <root>/.dsh-filess/<sessionId>/; session dirs are
-  // the only entries directly under the uploads base.
-  const base = join(root, '.dsh-filess')
-  let sessions: string[]
+  const counters = { files: 0, dirs: 0 }
+  // Uploaded files live at <root>/.dsh-filess/<sessionId>[/sub/dir/…]: the
+  // base is the single entry point; recursion covers folder-upload subtrees.
+  await sweepDir(join(root, '.dsh-filess'), cutoff, counters)
+  return { removedFiles: counters.files, removedDirs: counters.dirs }
+}
+
+/**
+ * Post-order recursive sweep of one directory: expired files unlinked, and a
+ * child directory that ends up empty is reaped bottom-up (session dirs and
+ * folder-upload subdirs included). Symlinks are skipped entirely — a link
+ * must never widen the sweep beyond the uploads base. Unlink/rmdir failures
+ * are ignored (raced with a DELETE, a concurrent upload or another sweep).
+ */
+async function sweepDir(dir: string, cutoff: number, counters: { files: number; dirs: number }): Promise<void> {
+  let entries: Dirent[]
   try {
-    sessions = await readdir(base)
+    entries = await readdir(dir, { withFileTypes: true })
   } catch {
-    return { removedFiles: 0, removedDirs: 0 }
+    return
   }
-  for (const session of sessions) {
-    const dir = join(base, session)
-    let info
-    try {
-      info = await stat(dir)
-    } catch {
-      continue
-    }
-    if (!info.isDirectory()) continue
-    let files: string[]
-    try {
-      files = await readdir(dir)
-    } catch {
-      continue
-    }
-    for (const file of files) {
-      const path = join(dir, file)
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      await sweepDir(path, cutoff, counters)
       try {
-        const fileInfo = await stat(path)
-        if (fileInfo.mtimeMs < cutoff) {
+        if ((await readdir(path)).length === 0) {
+          await rmdir(path)
+          counters.dirs += 1
+        }
+      } catch {
+        // raced with a DELETE or another sweep; non-empty dirs fail rmdir
+      }
+    } else if (entry.isFile()) {
+      try {
+        const info = await stat(path)
+        if (info.mtimeMs < cutoff) {
           await unlink(path)
-          removedFiles += 1
+          counters.files += 1
         }
       } catch {
         // raced with a DELETE or another sweep
       }
     }
-    try {
-      const remaining = await readdir(dir)
-      if (remaining.length === 0) {
-        await rmdir(dir)
-        removedDirs += 1
-      }
-    } catch {
-      // ignore
-    }
   }
-  return { removedFiles, removedDirs }
 }
