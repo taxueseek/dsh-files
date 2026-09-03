@@ -238,6 +238,9 @@ async function insertOnce(actx: ActionContext, ref: string, label: string): Prom
     const after = input.state.getSnapshot()
     if (after.occurrences.some((o) => o.source === SOURCE_NAME && o.ref === ref)) return true
   }
+  // Exhausted every attempt — the caller surfaces the toast, but log so a regression in
+  // the host span contract is observable instead of a silent "file did not attach".
+  console.warn(`[dsh-files] reference insert failed after retries: ${ref}`)
   return false
 }
 
