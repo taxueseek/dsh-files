@@ -160,6 +160,12 @@ interface InputService {
     state: { getSnapshot(): InputSnapshot }
     /** Append ordered browser-owned draft image ids into this session's draft (native attachment rail). */
     addImages(ids: string[]): boolean
+    /**
+     * Collapsed caret (or the live selection) in DETECT coordinates — the coordinate
+     * space the host applies insert spans in. Optional: older hosts may not expose it,
+     * in which case we fall back to the (wrong for a non-empty draft) clipboard length.
+     */
+    caretSpan?(): { start: number; end: number }
   }
 }
 
@@ -183,27 +189,69 @@ function httpErrorText(status: number): string {
   return `HTTP ${status}`
 }
 
-/** 把文件路径插入输入框（上传与文件面板共用）。 */
-async function insertReference(actx: ActionContext, ref: string, label: string): Promise<boolean> {
+/**
+ * Serialize composer inserts. They all mutate one revisioned draft and the host applies
+ * each span against the *current* detect text, so two inserts in flight at once (the
+ * concurrent uploadMany workers) would clobber or miss each other.
+ */
+let insertChain: Promise<unknown> = Promise.resolve()
+
+function settleFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve())
+    else setTimeout(resolve, 16)
+  })
+}
+
+async function insertOnce(actx: ActionContext, ref: string, label: string): Promise<boolean> {
   const conversation = actx.get('conversation')
   if (conversation === undefined) throw new Error('conversation service unavailable')
   const input = conversation.input.for(actx)
-  const state = input.state.getSnapshot()
-  actx.emit('slash/input-insert-reference', {
-    reference: {
-      source: SOURCE_NAME,
-      ref,
-      label,
-      clipboardText: ref
-    },
-    span: {
-      start: state.draft.length,
-      end: state.draft.length,
-      draftRev: state.draftRev
-    }
-  })
-  const after = input.state.getSnapshot()
-  return after.occurrences.some((o) => o.source === SOURCE_NAME && o.ref === ref)
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const state = input.state.getSnapshot()
+    // The span must be in DETECT coordinates. state.draft is the *clipboard* text, which
+    // grows with each inserted chip's path text while the detect text does not — so once
+    // one chip exists, state.draft.length points past the end of the detect text and the
+    // host silently no-ops the replace, returning the file to the caller as a failure.
+    // caretSpan() answers the collapsed caret (or the live selection) in detect
+    // coordinates, which is the position the host actually expects.
+    const caret =
+      typeof input.caretSpan === 'function'
+        ? input.caretSpan()
+        : { start: state.draft.length, end: state.draft.length }
+    actx.emit('slash/input-insert-reference', {
+      reference: {
+        source: SOURCE_NAME,
+        ref,
+        label,
+        clipboardText: ref
+      },
+      span: {
+        start: caret.start,
+        end: caret.end,
+        draftRev: state.draftRev
+      }
+    })
+    // Let the editor commit and republish before we read occurrences, so the success
+    // check reflects this insert rather than a stale snapshot.
+    await settleFrame()
+    const after = input.state.getSnapshot()
+    if (after.occurrences.some((o) => o.source === SOURCE_NAME && o.ref === ref)) return true
+  }
+  // Exhausted every attempt — the caller surfaces the toast, but log so a regression in
+  // the host span contract is observable instead of a silent "file did not attach".
+  console.warn(`[dsh-files] reference insert failed after retries: ${ref}`)
+  return false
+}
+
+/** 把文件路径插入输入框（上传与文件面板共用）。 */
+async function insertReference(actx: ActionContext, ref: string, label: string): Promise<boolean> {
+  const run = insertChain.then(() => insertOnce(actx, ref, label))
+  insertChain = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
 }
 
 /**
