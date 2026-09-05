@@ -4,3 +4,4 @@ node_modules/
 .dsh-uploads/
 .trash/
 pnpm-workspace.yaml
+*.tgz
