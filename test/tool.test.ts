@@ -4,7 +4,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { formatOutputBudget, defineReadDocumentTool } from '../src/tool.ts'
-import { ParseCache } from '../src/cache.ts'
 import { FsError, FsTargetKey, FsVersion } from '@deepseek-ai/dsh-fs'
 
 test('text uses the full base budget', () => {
@@ -51,8 +50,7 @@ test('read_document reads files larger than 64 KiB (head sniff no longer caps th
       sheetRowLimit: 200,
       maxSheets: 5,
       maxOutputChars: 24000
-    },
-    new ParseCache(4, 1024 * 1024)
+    }
   )
   const exec = { signal: new AbortController().signal, agent: undefined } as unknown as Parameters<typeof tool.execute>[1]
   const result = (await tool.execute({ file_path: 'big.txt' }, exec)) as {
@@ -77,8 +75,7 @@ test('read_document still rejects files over maxFileBytes with FS_TOO_LARGE', as
   }
   const tool = defineReadDocumentTool(
     { fs, emit: () => undefined },
-    { readLimit: 800, maxFileBytes, sheetRowLimit: 200, maxSheets: 5, maxOutputChars: 24000 },
-    new ParseCache(4, 1024 * 1024)
+    { readLimit: 800, maxFileBytes, sheetRowLimit: 200, maxSheets: 5, maxOutputChars: 24000 }
   )
   const exec = { signal: new AbortController().signal, agent: undefined } as unknown as Parameters<typeof tool.execute>[1]
   await assert.rejects(

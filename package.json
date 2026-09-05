@@ -1,15 +1,13 @@
 {
   "name": "dsh-files",
-  "version": "0.4.3",
-  "description": "DeepSeek Harness dual-face plugin: a composer file-upload button (paperclip + folder + drag-drop, @ dual-source candidates) with session-isolated storage, TTL sweep and sha256 dedup; native image support that hands JPEG/PNG/WebP/GIF to any image-capable model via the core attachment pipeline; plus a read_document tool (text/PDF/DOCX/XLSX) with content sniffing, GB18030 fallback and byte-budgeted LRU caching.",
+  "version": "0.5.0",
+  "description": "DeepSeek Harness plugin: the read_document tool (text/PDF/DOCX/XLSX) with content sniffing, encoding fallback chain and paged output — structured documents the built-in read tool rejects as binary. Upload/image/@ reference live in harness 0.1.3+ natively.",
   "keywords": [
     "deepseek",
     "harness",
     "dsh",
     "cordis",
     "plugin",
-    "upload",
-    "attachment",
     "pdf",
     "docx",
     "xlsx"
@@ -18,7 +16,6 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
-    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -30,13 +27,6 @@
   ],
   "license": "MIT",
   "dsh": {
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-runtime",
-        "@deepseek-ai/dsh-client-ui-conversation"
-      ],
-      "platform": "web"
-    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
@@ -48,29 +38,19 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/schemastery": "^3.18.1",
-    "react": "^18.2.0"
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@types/react": "~18.3.1",
-    "esbuild": "^0.24.2",
     "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
     "typescript": "^5.7.2"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node build.mjs",
+    "build": "tsc -p tsconfig.build.json",
     "test": "node --test",
     "prepublishOnly": "npm run build && npm test"
-  },
-  "allowScripts": {
-    "esbuild@0.24.2": true
   }
 }

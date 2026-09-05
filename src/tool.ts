@@ -1,15 +1,16 @@
 // The model-facing read_document tool. Reads through ctx.fs, so workspace
 // resolution, sandbox policy and fs-observation policy behave exactly like the
 // built-in read tool. Differences from the plain-text read tool: content
-// sniffing (never trusts extensions), size pre-check before reading bytes, and
-// an LRU parse cache keyed on (targetKey, fs version token, format).
+// sniffing (never trusts extensions) and a size pre-check before reading bytes.
+// The 0.4.x LRU parse cache was removed in 0.5.0 — measured parse cost
+// (180-235 ms for a 1.1 MB PDF) is noise next to model latency, so the cache
+// could not prove its necessity in the 0.5.0 ablation.
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { FsError, type FsTarget, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { sniffFormat, sniffHead, HEAD_SNIFF_BYTES, SUPPORTED_FORMATS, formatFromExtension, type DocumentFormat } from './detect.ts'
 import { parseDocument, type ParseOptions } from './parse/index.ts'
 import { windowLines } from './parse/text.ts'
-import { ParseCache } from './cache.ts'
 
 /**
  * 单次 read_document 窗口的字符预算。按格式分级：
@@ -126,7 +127,7 @@ export function defineReadDocumentTool(ctx: {
     readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>
   }
   emit(event: string, target: FsTarget, observation: object, exec: object): void
-}, config: ReadDocumentConfig, cache: ParseCache) {
+}, config: ReadDocumentConfig) {
   return defineTool({
     name: 'read_document',
     description:
@@ -265,48 +266,14 @@ export function defineReadDocumentTool(ctx: {
           'FS_NOT_TEXT'
         )
       }
-      // 缓存键 = targetKey + stat version + format + sheet 维度。键用 FsVersion
-      // （freshness token）而非内容哈希：dsh-fs 的写保护（replaceIfVersion /
-      // FS_STALE_VERSION）正押在同一 token 上保证正确性，读缓存信任它不引入
-      // 新信任面。0.2.0 曾改用全内容 sha256——失效判定更保守，但每次调用都
-      // 要为「查一段已在内存的文本」付一份全内容 sha256（24 MiB ≈ 40ms）+
-      // Buffer 复制的账，翻页读大文档的命中路径被键计算吃掉。
-      // 失效强度已对照本地后端实现核实：FsVersion = dev:ino:size:mtimeNs:
-      // ctimeNs。mtime 是纳秒粒度，且 ctime 由内核维护、用户态不可伪造——
-      // 任何原地写必 bump ctime，`cp -p`/`touch -r` 类 mtime 伪造攻不进来。
-      // 残留窗口只有 stat 与 readBytes 之间的 TOCTOU（读到的字节晚于 version
-      // 取样）：与 fs 层编辑守卫同边界，且下轮调用 version 已变即自愈。
-      const cacheKey = {
-        targetKey: target.targetKey,
-        version: info.version,
-        format,
+      // 解析器不接受 AbortSignal；这里包装一层协作取消：
+      // 信号触发时立即中止等待，符合 dsh 工具的取消契约。
+      const text = await parseDocumentWithAbort(bytes, format, {
+        sheetRowLimit: config.sheetRowLimit,
+        maxSheets: config.maxSheets,
         sheet: input.sheet,
-        listSheets: input.listSheets
-      }
-      const cached = cache.get(cacheKey)
-      if (cached !== undefined) {
-        const window = windowLines(cached, input.offset, input.limit, formatOutputBudget(format, config.maxOutputChars))
-        ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
-        return {
-          path: target.displayPath,
-          format,
-          offset: input.offset,
-          lines: window.lines,
-          totalLines: window.totalLines,
-          ...(input.sheet !== undefined ? { sheet: input.sheet } : {})
-        }
-      }
-      // getOrCompute 自带 in-flight 去重：并发分页同一文件只解析一次。
-      const text = await cache.getOrCompute(cacheKey, () =>
-        // 解析器不接受 AbortSignal；这里包装一层协作取消：
-        // 信号触发时立即中止等待，符合 dsh 工具的取消契约。
-        parseDocumentWithAbort(bytes, format, {
-          sheetRowLimit: config.sheetRowLimit,
-          maxSheets: config.maxSheets,
-          sheet: input.sheet,
-          listOnly: input.listSheets
-        }, exec.signal)
-      )
+        listOnly: input.listSheets
+      }, exec.signal)
       const window = windowLines(text, input.offset, input.limit, formatOutputBudget(format, config.maxOutputChars))
       ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
       return {

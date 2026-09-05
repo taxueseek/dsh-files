@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+### 破坏性变更：移除上传与图片管线，聚焦 read_document
+
+宿主 0.1.3-alpha.1 起原生提供通用文件上传（任意类型、文件与图片同预览区混排、后台进度/取消/会话切换续显、按保存路径用文件工具读取）、`@file`/`@session` 统一引用与目录钻取。0.5.0 消融实测（插件整体停用、服务稳定、跨插件零依赖）后按「删除无法证明必要性的复杂性」原则收缩为单一职责插件：
+
+- **移除**：回形针/文件夹/拖拽上传、`@` 双源候选、彩色文件卡片、图片附件管线（官方原生版更强：EXIF 剥离、色彩归一、request version 缓存）、TTL 清扫/会话配额/sha256 去重/安全护栏（随上传半）、esbuild client bundle（client 半归零——历史缺陷全部集中在 client 半与生命周期，宿主升级适配税随之归零）。
+- **移除**：LRU 解析缓存（消融实测 1.1 MB PDF 解析 180-235 ms，相对模型延迟是噪音，缓存无法证明必要性；`cacheEntries`/`cacheMaxBytes` 配置项随之删除）。
+- **保留**：`read_document` 工具全部分页/编码链/XLSX sheet 级/内容嗅探/协作取消能力；宿主内置 read 对二进制报 `FS_NOT_TEXT`，结构化文档解析仍是 0.1.3 的空白。
+- **安装要求**：harness ≥ 0.1.3-alpha.1（原生上传接管旧上传功能的前置）。
+- 配置面从 17 项收敛到 6 项（`maxFileBytes`/`readLimit`/`sheetRowLimit`/`maxSheets`/`maxOutputChars`/`readTimeoutMs`）。
+
 ## 0.4.3
 
 ### 修复（client）

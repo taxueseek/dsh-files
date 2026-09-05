@@ -1,4 +1,4 @@
-# dsh-upload bundle patch: one insert registering the dual-face plugin.
+# dsh-files bundle patch: one insert registering the read_document tool plugin.
 # The row id must match the node half's exported cordis `name`.
 - insert:
     - id: files-toolkit
@@ -8,7 +8,5 @@
         readLimit: 2000
         sheetRowLimit: 200
         maxSheets: 5
-        cacheEntries: 16
-        cacheMaxBytes: 67108864
-        uploadMaxBytes: 25165824
-        uploadTtlMs: 604800000
+        maxOutputChars: 24000
+        readTimeoutMs: 120000
