@@ -14,9 +14,13 @@ function tryDecode(bytes: Uint8Array, encoding: string, stripBom: boolean): stri
 
 export function decodeText(bytes: Uint8Array): string | null {
   if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    // BOM 后必须剩偶数个字节才是合法 UTF-16LE；奇数截尾时 fatal 解码会抛
+    // TypeError 而非返回 null，违反本函数「解不出就返回 null」的契约。
+    if ((bytes.length - 2) % 2 !== 0) return null
     return new TextDecoder('utf-16le', { fatal: true }).decode(bytes.subarray(2))
   }
   if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    if ((bytes.length - 2) % 2 !== 0) return null
     return new TextDecoder('utf-16be', { fatal: true }).decode(bytes.subarray(2))
   }
   // 与 detect 的文本判定一致：含 NUL 的解出结果不是合法文本，拒绝，

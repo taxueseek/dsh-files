@@ -511,12 +511,21 @@ function UploadDock({ useInput, inputActions }: DockProps) {
     // draft 已被编辑对不上时回退为扫到下一个空白。
     const draft = state?.draft ?? ''
     inputActions?.setDraft(removeTokenFromDraft(draft, ref, offset))
-    const wasUpload = uploadMeta.has(ref)
+    // 在删除元数据前取出上传时记录的 sessionId：会话头以文件自己的归属为
+    // 准，而不是当前全局会话——用户换会话后点移除时，文件在旧会话目录，
+    // 带错会话头只会 403（文件滞留等 TTL），带上归属会话头才能真正删掉。
+    const meta = uploadMeta.get(ref)
+    const wasUpload = meta !== undefined
     uploadMeta.delete(ref)
     uploadedPool.delete(ref)
     // 只对上传文件发删除；工作区相对路径引用不触碰 host 存储。
-    if (wasUpload) {
-      void fetch(`/api/upload?path=${encodeURIComponent(ref)}`, { method: 'DELETE' }).catch(() => {})
+    // DELETE 必须带会话头：服务端按它定位会话上传目录，缺头会被解析成
+    // anonymous 而永远 403（文件只能等 TTL 回收）。
+    if (wasUpload && meta !== undefined) {
+      void fetch(`/api/upload?path=${encodeURIComponent(ref)}`, {
+        method: 'DELETE',
+        headers: { 'x-session-id': meta.sessionId }
+      }).catch(() => {})
     }
   }
 

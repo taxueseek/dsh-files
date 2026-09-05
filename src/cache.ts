@@ -1,6 +1,7 @@
 // Bounded LRU cache for parsed document text. Keys are the fs target key plus
-// the observed file version, so an edited file never serves stale text while
-// unchanged files are parsed at most once per process.
+// the stat version token (the same freshness token dsh-fs write guards rely
+// on), so an edited file never serves stale text while unchanged files are
+// parsed at most once per process.
 //
 // Budget is enforced on BOTH entry count and total bytes: a 24 MiB PDF can
 // yield several MiB of extracted text, so a pure entry-count cap lets memory

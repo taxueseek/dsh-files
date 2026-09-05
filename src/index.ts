@@ -58,7 +58,7 @@ export const Config = z.object({
   sheetRowLimit: z.number().default(200),
   /** Sheets read per workbook (the rest are reported as truncated). */
   maxSheets: z.number().default(5),
-  /** Parse-cache capacity (targetKey + version fingerprints). */
+  /** Parse-cache capacity (targetKey + fs version fingerprints). */
   cacheEntries: z.number().default(16),
   /** Parse-cache byte budget; large PDFs dominate retained memory. */
   cacheMaxBytes: z.number().default(64 * MEBIBYTE),
@@ -100,10 +100,15 @@ export function apply(ctx: any, config: DocsConfig): void {
     ['maxOutputChars', config.maxOutputChars],
     ['uploadMaxBytes', config.uploadMaxBytes],
     ['uploadTtlMs', config.uploadTtlMs],
-    ['sweepIntervalMs', config.sweepIntervalMs],
     ['maxConcurrentUploads', config.maxConcurrentUploads]
   ] as const) {
     assertPositiveInteger(value, label)
+  }
+  // sweepIntervalMs=0 是合法配置：禁用周期清扫（createSweeper 对 0 直接返回
+  // no-op disposer）。校验为非负整数即可，不能进上面的正整数断言——那会让
+  // 文档承诺的「0 = 禁用」变成启动即抛错的死路径。
+  if (!Number.isInteger(config.sweepIntervalMs) || config.sweepIntervalMs < 0) {
+    throw new Error('dsh-files: sweepIntervalMs must be a non-negative integer (0 disables the periodic sweep)')
   }
   if (!Number.isInteger(config.maxUploadBytesPerSession) || config.maxUploadBytesPerSession < 0) {
     throw new Error('dsh-files: maxUploadBytesPerSession must be a non-negative integer')
