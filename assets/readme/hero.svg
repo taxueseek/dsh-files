@@ -1,28 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-labelledby="title desc">
   <title id="title">dsh-files</title>
-  <desc id="desc">DeepSeek Harness 双面插件：Web UI 回形针上传，模型读文档，原生读写去重。</desc>
+  <desc id="desc">DeepSeek Harness 插件：原生上传管线上的文件夹按钮，外加 read_document 文档解析。</desc>
 
   <rect width="1200" height="260" rx="24" fill="#101418"/>
   <rect x="1" y="1" width="1198" height="258" rx="23" fill="none" stroke="#2A323A"/>
 
   <g id="title-block" transform="translate(48 40)">
-    <text x="0" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#D4A017" letter-spacing="2.2">DSH PLUGIN · DUAL FACE</text>
+    <text x="0" y="16" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#D4A017" letter-spacing="2.2">DSH PLUGIN · NATIVE FIRST</text>
     <text x="0" y="68" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="42" font-weight="700" fill="#F4F1EA">dsh-files</text>
-    <text x="0" y="108" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="17" fill="#C8C2B6">一个包。Web UI 回形针上传，模型读文档。</text>
-    <text x="0" y="138" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="15" fill="#8B938C">会话隔离存储 · 字节嗅探不信扩展名 · 一行配置</text>
+    <text x="0" y="108" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="17" fill="#C8C2B6">原生管线上，多一个文件夹按钮。</text>
+    <text x="0" y="138" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="15" fill="#8B938C">读内置 read 读不了的 PDF / DOCX / XLSX · 展示与上传交给官方 · 一行配置</text>
+    <text x="0" y="168" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" fill="#6E7A72">The folder button on the native upload pipeline, plus the read_document parser.</text>
   </g>
 
-  <g id="project-proof" transform="translate(700 46)">
-    <!-- paperclip -->
-    <path d="M86 28c-9-9-24-9-33 0L18 63c-14 14-14 37 0 51s37 14 51 0l48-48c9-9 9-24 0-33s-24-9-33 0L52 65" fill="none" stroke="#D4A017" stroke-width="6" stroke-linecap="round"/>
-
-    <g transform="translate(170 8)">
-      <rect width="86" height="108" rx="10" fill="#3A1E1E" stroke="#C45C4A"/>
-      <text x="43" y="62" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#F3B4AA">PDF</text>
-      <rect x="96" width="86" height="108" rx="10" fill="#1C2C44" stroke="#5B8FD6"/>
-      <text x="139" y="62" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#B7D0F5">DOC</text>
-      <rect x="192" width="86" height="108" rx="10" fill="#1B3324" stroke="#5EAF78"/>
-      <text x="235" y="62" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="13" fill="#B7E0C4">XLS</text>
+  <g id="visual" transform="translate(700 46)">
+    <!-- folder glyph -->
+    <g transform="translate(10 6)">
+      <path d="M0 18a8 8 0 0 1 8-8h28l12 12h48a8 8 0 0 1 8 8v52a8 8 0 0 1-8 8H8a8 8 0 0 1-8-8z" fill="none" stroke="#D4A017" stroke-width="5" stroke-linejoin="round"/>
+    </g>
+    <!-- official-style doc cards -->
+    <g transform="translate(150 8)">
+      <rect width="150" height="90" rx="14" fill="#1A2028" stroke="#2E3A46"/>
+      <rect x="16" y="23" width="44" height="44" rx="10" fill="#4A6BD8"/>
+      <rect x="72" y="26" width="60" height="9" rx="4.5" fill="#9AA6B2"/>
+      <rect x="72" y="45" width="44" height="8" rx="4" fill="#57646F"/>
+      <rect x="150" y="0" width="150" height="90" rx="14" fill="#1A2028" stroke="#2E3A46" transform="translate(18 0)"/>
+      <rect x="184" y="23" width="44" height="44" rx="10" fill="#C45C4A" transform="translate(18 0)"/>
+      <rect x="240" y="26" width="52" height="9" rx="4.5" fill="#9AA6B2" transform="translate(18 0)"/>
+      <rect x="240" y="45" width="38" height="8" rx="4" fill="#57646F" transform="translate(18 0)"/>
     </g>
   </g>
 </svg>

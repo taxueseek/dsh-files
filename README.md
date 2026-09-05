@@ -18,6 +18,10 @@ A DeepSeek Harness plugin that does exactly one thing: the **`read_document` too
 
 Native upload in harness 0.1.3 stores files as byte objects and hands the model one handle line (name, size, digest, read-only path) to read with **file tools** — but the built-in read tool rejects binary content with `FS_NOT_TEXT`. Structured text extraction for PDF / DOCX / XLSX is the gap the official stack leaves open; this plugin fills it.
 
+<p align="center">
+  <img src="assets/composer.png" alt="Composer toolbar: the folder button sits right next to the native paperclip, visually identical" width="820">
+</p>
+
 ## Capabilities
 
 - **Content sniffing**: PDF header / ZIP central-directory members / UTF-8 (fatal) / UTF-16 BOM / GB18030 — decided from bytes, never from extensions; disguised files (an exe renamed .pdf) are rejected. The format hint is only a last resort when bytes are fully unknown
@@ -25,6 +29,10 @@ Native upload in harness 0.1.3 stores files as byte objects and hands the model 
 - **Paged reads**: line numbers + offset/limit; the per-call character budget differs by format (text full, xlsx 3/4, pdf/docx 1/2), overflow truncates with an explicit remaining-lines marker
 - **Line-number policy**: text (code/config) carries line numbers for precise edits; PDF/DOCX/XLSX are paragraph flows without line numbers (saves tokens)
 - **XLSX sheet-level reads**: `list_sheets` names the sheets, the `sheet` parameter reads one sheet in full (no row cap), out-of-range errors list the available sheets
+
+<p align="center">
+  <img src="assets/upload-folder-images.png" alt="After a batch folder upload, files land in the native draft rail as official cards" width="680">
+</p>
 - **Scanned PDFs are explicit**: a PDF with no text layer returns an explicit notice, not an empty string
 - **Cooperative cancellation**: parsing listens on the execution signal; user cancel / session close aborts immediately
 - **Output projection**: text results project onto the official `card: 'read'` file card; reads go through `ctx.fs` and inherit session sandbox and fs-observation policy

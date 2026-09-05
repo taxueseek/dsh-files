@@ -1,7 +1,7 @@
 {
   "name": "dsh-files",
-  "version": "0.5.0",
-  "description": "DeepSeek Harness plugin: the read_document tool (text/PDF/DOCX/XLSX) with content sniffing, encoding fallback chain and paged output — structured documents the built-in read tool rejects as binary. Upload/image/@ reference live in harness 0.1.3+ natively.",
+  "version": "0.5.1",
+  "description": "DeepSeek Harness plugin: a folder-picker button next to the native paperclip. Flattened files enter the host 0.1.3+ native attachment pipeline (official draft rail, background upload, progress, model handle line); plus the read_document tool (text/PDF/DOCX/XLSX) the built-in read tool rejects as binary.",
   "keywords": [
     "deepseek",
     "harness",
@@ -16,6 +16,7 @@
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -27,6 +28,13 @@
   ],
   "license": "MIT",
   "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     }
@@ -38,19 +46,27 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/react": "~18.3.1",
+    "esbuild": "^0.24.2",
     "jszip": "^3.10.1",
     "pdf-lib": "^1.17.1",
     "typescript": "^5.7.2"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node build.mjs",
     "test": "node --test",
     "prepublishOnly": "npm run build && npm test"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
   }
 }

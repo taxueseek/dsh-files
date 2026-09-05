@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1
+
+### 新形态：原生管线上只加一个文件夹按钮
+
+按用户拍板的方向重构：**用原生的显示，再叠加独有能力**。宿主 0.1.3 的回形针/拖拽/@ 引用/预览区全部保留为唯一入口与显示层，dsh-files 只做两件原生没有的事：
+
+- **文件夹按钮**：注入 `conversation.input.left`（官方回形针旁边）。点选目录后浏览器递归展平（`webkitRelativePath` 保留层级），逐文件进入官方附件管线——`conversation.createDrafts()` 铸造草稿（图片走视觉管线、其他文件自动启动官方后台上传）+ `inputActions.addAttachments()` 挂载。**显示、字节进度、取消/重试、会话切换续显、模型 handle 行全部由官方持有**，本插件不渲染任何卡片、不注册任何上传路由。
+- **read_document 工具**：继承 0.5.0 的单一职责服务端（PDF/DOCX/XLSX/文本解析，内容嗅探、编码链、分页、sheet 级访问）。
+
+client bundle 从 0.4.3 的 ~60KB 缩到 **4.9KB**（一个按钮 + 一次官方 API 调用）；配置 6 项；前置 harness ≥ 0.1.3-alpha.1。
+
 ## 0.5.0
 
 ### 破坏性变更：移除上传与图片管线，聚焦 read_document

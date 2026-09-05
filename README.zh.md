@@ -18,6 +18,10 @@
 
 harness 0.1.3 的原生上传把文件存为字节对象，模型拿到一行 handle（文件名、大小、摘要、只读路径）后用**文件工具**读取——而内置 read 对二进制内容直接报 `FS_NOT_TEXT`。PDF / DOCX / XLSX 的结构化文本提取是官方留白，这个插件补上它。
 
+<p align="center">
+  <img src="assets/composer.png" alt="输入框工具栏：官方回形针旁的文件夹按钮，视觉与原生一致" width="820">
+</p>
+
 ## 能力
 
 - **内容嗅探**：PDF 头 / ZIP 中央目录成员 / UTF-8（fatal）/ UTF-16 BOM / GB18030，全部从字节判定，扩展名伪装（exe 改 .pdf）一律拒绝；格式 hint 仅作字节完全未知时的兜底
@@ -25,6 +29,10 @@ harness 0.1.3 的原生上传把文件存为字节对象，模型拿到一行 ha
 - **分页读取**：行号 + offset/limit 翻页；窗口字符预算按格式差异化（text 满额、xlsx 3/4、pdf/docx 1/2），超限显式标记剩余行数
 - **行号策略**：text（代码/配置）带行号供精确定位；PDF/DOCX/XLSX 段落流不带行号（省 token）
 - **XLSX sheet 级读取**：`list_sheets` 先列名，`sheet` 参数读全量单表（不受行截断限制），越界报错附带可用 sheet 列表
+
+<p align="center">
+  <img src="assets/upload-folder-images.png" alt="文件夹批量上传后，文件以官方原生卡片进入预览区" width="680">
+</p>
 - **扫描件明示**：无文本层的 PDF 返回显式提示而非空串
 - **协作取消**：解析期间监听执行信号，用户取消/会话关闭立即中止
 - **输出呈现**：text 结果投影为官方 `card: 'read'` 读文件卡片；解析走 `ctx.fs`，继承会话沙箱与 fs 观察策略
