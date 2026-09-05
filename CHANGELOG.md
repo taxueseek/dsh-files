@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.3
+
+### 修复（client）
+
+- **多文件引用只落第一个（#12）**：插入 span 此前用剪贴板文本长度当坐标，而宿主把 span 应用在 detect 投影上——草稿里每多一个 chip 两个坐标系就分叉一截，第二个起全部静默 no-op（多选/文件夹/拖拽批量与同草稿逐个添加都命中，确定性复现）。现改用 `caretSpan()` 的 detect 坐标（老宿主无此方法时回退旧逻辑），插入经单链串行化、8 次重试、每帧以 `occurrences` 计数增量确认；重试耗尽打 `console.warn` 可观测（PR #13）。
+- **移除一张卡片会压平其余 chip**：`setDraft` 按纯文本重建文档，幸存引用全变裸路径。现在移除后逐个把幸存 ref 的路径文本用 span 替换回 chip（压平态 clipboard 与 detect 坐标一致；detect 偏移按已替换累计长度修正），替换被拒时留纯路径不丢内容。
+- **会话切换后卡片信息退化**：`uploadMeta` 随草稿剪枝，切回会话后卡片名/徽标/大小退化为从存储路径反推的猜测。回退 `uploadedPool`（按插入序淘汰、不随会话剪枝）。
+- **移除卡片残留双空格**：chip 自带分隔尾空格，删除点两侧都是空格时吃掉一个；行首/行尾不动。
+- **文件选择器取消后隐藏 input 残留 DOM**：`change` 不触发时无清理，多次取消持续堆积。合并文件/文件夹两条 picker 路径，监听 `cancel` 事件并在重开前移除上一个。
+- **同 ref 已有 chip 时插入误报成功**：成功判定从「已存在」改为 `occurrences` 计数增量。
+- **文本族徽标一律 TXT**：`.md`/`.html`/`.csv` 等按真实扩展名显示（1-4 位纯字母），无短扩展名才回退 TXT。
+- **换会话后移除卡片 403**：DELETE 带上传时记录的归属会话头（`x-session-id`），文件真正删除而非滞留等 TTL。
+
+### 修复（server）
+
+- **超长伪扩展名绕过 120 字节截断**：扩展名只认最后一点后 1-8 位 ASCII 字母数字，否则不按扩展名保留——`extBytes` 可被撑爆 120 字节预算导致 ENAMETOOLONG 回归；裸扩展名输入（`.pdf`）保持无损。
+- **DELETE 路径二次解码挂起连接**：`searchParams.get` 已做一次百分号解码，文件名含 `%`（如 `50%off.pdf`）时再 `decodeURIComponent` 会抛未捕获 URIError，keep-alive 连接就此挂起。
+- **UTF-16 BOM 后奇数字节抛 TypeError**：`decodeText` 契约是「解不出返回 null」，奇数截尾改为返回 null。
+- **`sweepIntervalMs=0` 恢复为合法配置**：文档承诺 0 = 禁用周期清扫，但校验进了正整数断言变成启动即抛错的死路径；改为非负整数校验。
+- **解析缓存键改用 fs version token**：键 = targetKey + `FsVersion`（dsh-fs 写守卫押注的同一 freshness token）替代全内容 sha256——翻页读大文档的命中路径不再付 24 MiB ≈ 40ms 的哈希账；失效强度对照 fs 层编辑守卫核实（mtime 纳秒 + ctime 内核维护，`cp -p`/`touch -r` 伪造攻不进来）。
+
+### 测试
+
+- 新增客户端与回归测试，全量 108 通过，tsc 零错。
+
 ## 0.4.2
 
 ### 修复

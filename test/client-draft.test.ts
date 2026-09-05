@@ -9,7 +9,8 @@ test('removeTokenFromDraft deletes the exact ref at the occurrence offset', () =
   const draft = '看看 /tmp/ws/a b/file.pdf 好了吗'
   const ref = '/tmp/ws/a b/file.pdf'
   const offset = draft.indexOf(ref)
-  assert.equal(removeTokenFromDraft(draft, ref, offset), '看看  好了吗')
+  // chip 自带的分隔空格不再留成双空格：删除点两侧都是空格时吃掉一个。
+  assert.equal(removeTokenFromDraft(draft, ref, offset), '看看 好了吗')
 })
 
 test('removeTokenFromDraft keeps text before and after the token', () => {
@@ -19,7 +20,13 @@ test('removeTokenFromDraft keeps text before and after the token', () => {
 
 test('removeTokenFromDraft falls back to whitespace scanning when the draft moved on', () => {
   // ref 与 offset 处的实际文本不一致（用户已编辑草稿）：回退扫到空白。
-  assert.equal(removeTokenFromDraft('read /a/b.txt now', '/zzz/other.txt', 5), 'read  now')
+  assert.equal(removeTokenFromDraft('read /a/b.txt now', '/zzz/other.txt', 5), 'read now')
+})
+
+test('removeTokenFromDraft keeps single spacers at draft edges', () => {
+  // 删除点在行首/行尾时没有「两侧配对空格」，不吃空格（尾空格保留）。
+  assert.equal(removeTokenFromDraft('/a/b.txt tail', '/a/b.txt', 0), ' tail')
+  assert.equal(removeTokenFromDraft('head /a/b.txt', '/a/b.txt', 5), 'head ')
 })
 
 test('removeTokenFromDraft stops at the first whitespace in fallback mode', () => {

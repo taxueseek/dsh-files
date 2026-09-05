@@ -34,6 +34,9 @@ const uploadedPool = new Map<string, UploadMeta>()
 // @ 双源的第二源：工作区文件。缓存 30 秒且绑定会话（换会话即失效），
 // 避免每次 @ 都重建 BFS 索引，也避免把上一个会话的工作区文件串进当前会话。
 let currentSessionId = ''
+// 当前会话作用域（与 currentSessionId 同一处捕获）：移除卡片后恢复幸存
+// chip 需要 emit insert-reference 事件，而 UploadDock 的 props 不含 actx。
+let currentActx: ActionContext | undefined = undefined
 const WORKSPACE_CACHE_MS = 30_000
 let workspaceCache: { sessionId: string; files: Array<{ rel: string; name: string }>; at: number } | null = null
 
@@ -85,12 +88,21 @@ function clearUploadError(): void {
   for (const listener of errorListeners) listener()
 }
 
+/** 文本族 badge 标签：文件名带可辨认的短扩展名（1-4 位纯字母）就显示它，
+ *  否则回退 TXT。TXT 一刀切让 .md/.html/.csv 卡片不可分辨。 */
+function textExtLabel(name: string): string {
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0 || dot === name.length - 1) return 'TXT'
+  const ext = name.slice(dot + 1)
+  return /^[A-Za-z]{1,4}$/.test(ext) ? ext.toUpperCase() : 'TXT'
+}
+
 function badgeStyle(name: string, sniffed?: string | null): { bg: string; ext: string } {
   // 真实格式优先于扩展名：伪装文件（exe 改 .pdf）按真实内容着色。
   if (sniffed === 'pdf') return { bg: '#C93B2E', ext: 'PDF' }
   if (sniffed === 'docx') return { bg: '#2B579A', ext: 'DOC' }
   if (sniffed === 'xlsx') return { bg: '#217346', ext: 'XLS' }
-  if (sniffed === 'text') return { bg: '#757575', ext: 'TXT' }
+  if (sniffed === 'text') return { bg: '#757575', ext: textExtLabel(name) }
   // sniffed 字段存在但为 null（未知/二进制）：拒绝按扩展名伪装显示。
   if (sniffed === null) return { bg: '#5B7DB1', ext: 'FILE' }
   const ext = name.slice(name.lastIndexOf('.') + 1).toUpperCase().slice(0, 4)
@@ -98,7 +110,8 @@ function badgeStyle(name: string, sniffed?: string | null): { bg: string; ext: s
   if (lower === 'pdf') return { bg: '#C93B2E', ext: 'PDF' }
   if (lower === 'docx' || lower === 'doc') return { bg: '#2B579A', ext: 'DOC' }
   if (lower === 'xlsx' || lower === 'xls' || lower === 'csv') return { bg: '#217346', ext: 'XLS' }
-  if (lower === 'txt' || lower === 'md') return { bg: '#757575', ext: 'TXT' }
+  if (lower === 'md') return { bg: '#757575', ext: 'MD' }
+  if (lower === 'txt') return { bg: '#757575', ext: 'TXT' }
   if (lower === 'zip') return { bg: '#7A5BB0', ext: 'ZIP' }
   return { bg: '#5B7DB1', ext: ext === '' ? 'FILE' : ext }
 }
@@ -207,10 +220,48 @@ function settleFrame(): Promise<void> {
   })
 }
 
+/**
+ * 恢复被 setDraft 压平的 chip。宿主 setDraft 按纯文本逐行重建文档，幸存
+ * 引用只剩裸路径文本。此刻文档无 chip，clipboard 与 detect 坐标一致；而
+ * insert-reference 的 span 语义是「把 span 覆盖的文本替换为 chip」，于是
+ * 逐个在 draft 里定位路径文本、覆盖替换回 chip。每成功替换一个，detect
+ * 文本缩短一个 ref 的长度（chip 不进 detect 投影，clipboard 不变），后续
+ * ref 的 detect 偏移要减去已替换累计长度。替换是否生效以宿主 occurrences
+ * 计数为准：CAS / phase 拒绝时不平移，那段文本保留为纯路径（内容不丢）。
+ */
+async function restoreSurvivorChips(refs: readonly string[]): Promise<void> {
+  const actx = currentActx
+  if (actx === undefined) return
+  const conversation = actx.get('conversation')
+  if (conversation === undefined) return
+  const input = conversation.input.for(actx)
+  let replaced = 0
+  for (const ref of refs) {
+    await settleFrame()
+    const snap = input.state.getSnapshot()
+    const at = snap.draft.indexOf(ref)
+    // 路径文本已不在（用户编辑过 / 与手打文本交叠）——保文本，不强插。
+    if (at < 0) continue
+    const before = snap.occurrences.filter((o) => o.source === SOURCE_NAME && o.ref === ref).length
+    actx.emit('slash/input-insert-reference', {
+      reference: { source: SOURCE_NAME, ref, label: '', clipboardText: ref },
+      span: { start: at - replaced, end: at - replaced + ref.length, draftRev: snap.draftRev }
+    })
+    await settleFrame()
+    const gained =
+      input.state.getSnapshot().occurrences.filter((o) => o.source === SOURCE_NAME && o.ref === ref).length > before
+    if (gained) replaced += ref.length
+  }
+}
+
 async function insertOnce(actx: ActionContext, ref: string, label: string): Promise<boolean> {
   const conversation = actx.get('conversation')
   if (conversation === undefined) throw new Error('conversation service unavailable')
   const input = conversation.input.for(actx)
+  // 成功判定用计数增量而非「已存在」：同一 ref 之前已插过 chip 时，
+  // some() 会把本次失败的 no-op 误报成成功。
+  const before = input.state.getSnapshot().occurrences.filter((o) => o.source === SOURCE_NAME && o.ref === ref)
+    .length
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const state = input.state.getSnapshot()
     // The span must be in DETECT coordinates. state.draft is the *clipboard* text, which
@@ -240,7 +291,7 @@ async function insertOnce(actx: ActionContext, ref: string, label: string): Prom
     // check reflects this insert rather than a stale snapshot.
     await settleFrame()
     const after = input.state.getSnapshot()
-    if (after.occurrences.some((o) => o.source === SOURCE_NAME && o.ref === ref)) return true
+    if (after.occurrences.filter((o) => o.source === SOURCE_NAME && o.ref === ref).length > before) return true
   }
   // Exhausted every attempt — the caller surfaces the toast, but log so a regression in
   // the host span contract is observable instead of a silent "file did not attach".
@@ -463,17 +514,27 @@ function UploadButton({ attach, scope }: UploadButtonProps) {
     }
   }, [])
 
-  const pick = () => {
+  // 文件/文件夹选择共用一个开选择器流程（只差 webkitdirectory）。cancel
+  // 分支必须清理：用户取消时 change 不触发，隐藏 input 会残留在 DOM 里，
+  // 多次取消就堆积。appendChild 前先移除上一个，兜住不支持 cancel 事件的
+  // 旧浏览器。
+  const openPicker = (directory: boolean) => {
+    inputRef.current?.remove()
     const input = document.createElement('input')
     input.type = 'file'
     input.multiple = true
+    if (directory) (input as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true
     input.style.display = 'none'
     document.body.appendChild(input)
     inputRef.current = input
+    const finish = () => {
+      input.remove()
+      if (inputRef.current === input) inputRef.current = null
+    }
+    input.addEventListener('cancel', finish)
     input.onchange = () => {
       const files = Array.from(input.files ?? [])
-      input.remove()
-      inputRef.current = null
+      finish()
       if (files.length === 0) return
       setBusy(true)
       void (async () => {
@@ -487,34 +548,11 @@ function UploadButton({ attach, scope }: UploadButtonProps) {
     }
     input.click()
   }
+  const pick = () => openPicker(false)
 
   // 文件夹选择：webkitdirectory 的文件选择器只认目录，选中后 input.files
   // 已是递归展平的相对路径列表（含 webkitRelativePath），走同一上传管线。
-  const pickDir = () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.multiple = true
-    ;(input as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true
-    input.style.display = 'none'
-    document.body.appendChild(input)
-    inputRef.current = input
-    input.onchange = () => {
-      const files = Array.from(input.files ?? [])
-      input.remove()
-      inputRef.current = null
-      if (files.length === 0) return
-      setBusy(true)
-      void (async () => {
-        try {
-          await scopeRef.current(files)
-        } catch (err) {
-          setUploadError(err instanceof Error ? err.message : String(err))
-        }
-        setBusy(false)
-      })()
-    }
-    input.click()
-  }
+  const pickDir = () => openPicker(true)
   return (
     <>
       <Tooltip label={busy ? '上传中…' : '上传文件'} side="top">
@@ -553,16 +591,19 @@ function UploadDock({ useInput, inputActions }: DockProps) {
 
   if (ours.length === 0 && error === null) return null
 
-  const removeCard = (ref: string, offset: number) => {
+  const removeCard = (ref: string, offset: number, occurrenceId: string) => {
     // 引用 token 是插入到 draft 的裸路径；occurrence 只给 offset 不给长度。
     // 优先按 ref 全文精确匹配删除（路径可能含空格，盲扫空白会切一半），
     // draft 已被编辑对不上时回退为扫到下一个空白。
     const draft = state?.draft ?? ''
+    const survivors = ours.filter((o) => o.occurrenceId !== occurrenceId)
     inputActions?.setDraft(removeTokenFromDraft(draft, ref, offset))
     // 在删除元数据前取出上传时记录的 sessionId：会话头以文件自己的归属为
     // 准，而不是当前全局会话——用户换会话后点移除时，文件在旧会话目录，
     // 带错会话头只会 403（文件滞留等 TTL），带上归属会话头才能真正删掉。
-    const meta = uploadMeta.get(ref)
+    // uploadMeta 会在会话切换时被剪枝，这里连带 uploadedPool 一起回退，
+    // 避免换会话回来移除时把上传文件误判成工作区引用而漏发 DELETE。
+    const meta = uploadMeta.get(ref) ?? uploadedPool.get(ref)
     const wasUpload = meta !== undefined
     uploadMeta.delete(ref)
     uploadedPool.delete(ref)
@@ -575,6 +616,8 @@ function UploadDock({ useInput, inputActions }: DockProps) {
         headers: { 'x-session-id': meta.sessionId }
       }).catch(() => {})
     }
+    // setDraft 重建文档会把幸存 chip 压平成裸路径文本；把它们替换回 chip。
+    if (survivors.length > 0) void restoreSurvivorChips(survivors.map((o) => o.ref))
   }
 
   return (
@@ -590,7 +633,10 @@ function UploadDock({ useInput, inputActions }: DockProps) {
         </div>
       )}
       {ours.map((occ) => {
-        const meta = uploadMeta.get(occ.ref)
+        // uploadMeta 在会话切换时会被剪枝（occurrences 恢复后 meta 已不在），
+        // 回退 uploadedPool（按插入序淘汰、不随会话剪枝），卡片名/徽标/大小
+        // 不再退化为从存储路径反推的猜测。
+        const meta = uploadMeta.get(occ.ref) ?? uploadedPool.get(occ.ref)
         const name = meta?.name ?? nameFromPath(occ.ref)
         const { bg, ext } = badgeStyle(name, meta?.sniffed)
         return (
@@ -609,7 +655,7 @@ function UploadDock({ useInput, inputActions }: DockProps) {
                 type="button"
                 className="dsh-files-remove"
                 aria-label="移除"
-                onClick={() => removeCard(occ.ref, occ.offset)}
+                onClick={() => removeCard(occ.ref, occ.offset, occ.occurrenceId)}
               >
                 <IconCloseOutline16 size={12} />
               </button>
@@ -690,10 +736,12 @@ export function apply(ctx: {
         name: 'conversation.input.left',
         id: 'dsh-files-button',
         order: 0,
-        inject: (sessionId: string) => {
-          // 捕获当前会话：@ 工作区候选按会话 cwd 索引。
-          currentSessionId = sessionId
-          const actx = ctx.sessions.scope(sessionId)
+          inject: (sessionId: string) => {
+            // 捕获当前会话：@ 工作区候选按会话 cwd 索引；currentActx 供
+            // UploadDock 的 chip 恢复路径 emit insert-reference 事件。
+            currentSessionId = sessionId
+            const actx = ctx.sessions.scope(sessionId)
+            currentActx = actx
           return {
             attach: (file: File) => attachFile(actx, file, sessionId),
             // 文件夹/多文件上传复用同一会话作用域（有界并发，见 uploadMany）。
