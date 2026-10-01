@@ -91,10 +91,15 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | Notes |
 | --- | --- | --- |
-| 0.5.5 | **0.2.0-rc.2 (current, measured)** | SDK aligned with the host `0.2.0-rc.2` (`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` all at the host version), so client components resolve without a version ambiguity. |
+| 0.5.6 | **0.2.0-rc.2 (current, measured)** | Same SDK alignment as 0.5.5; `package.json` now carries machine-readable metadata: `repository`, `engines` (Node ≥ 20), and `dsh.compatibility` (`dshReleases` / `dshOperations`). |
+| 0.5.5 | 0.2.0-rc.2 (measured) | SDK aligned with the host `0.2.0-rc.2` (`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` all at the host version), so client components resolve without a version ambiguity. |
 | 0.5.3–0.5.4 | 0.1.7-alpha.1 | SDK pinned at `0.1.7-alpha.1`; on a `0.2.0-rc.2` host the client icons may fail to resolve (see below). |
 | 0.5.x | ≥ 0.1.3-alpha.1 | Older SDK pins (`0.1.0-rc.x`); attachment dock and `@` source predate the host's `conversation.composer.dock` slot. |
 | 0.6.x | — | Never released (folded into 0.5.2/0.5.3); do not use. |
+
+Requires Node.js ≥ 20 (the floor the plugin is developed and tested on; the harness CLI itself runs on the user's Node).
+
+The machine-readable compatibility record in `package.json` (`dsh.compatibility`) declares `0.2.0-rc.2` as compatible, with `install` / `start` operations verified as passed on a real host profile (2026-09-29, host `0.2.0-rc.2`); `uninstall` / `rollback` are declared `unknown` because they have not been exercised on this release.
 
 The plugin targets the `alpha` line the maintainer runs locally (`0.1.7-alpha.1`); npm `latest` (`0.1.5-rc.3` at the time of writing) is older, so prefer the git install above over any registry version.
 
@@ -171,6 +176,19 @@ Every failure from `/plugins/dsh-files/attachments*` has the same shape: a machi
 | `list-failed` / `export-failed` / `attachment-read-failed` | 500 | Carries the underlying reason and what to check |
 
 ## Security
+
+### Permission statement
+
+Declared explicitly, mapped to the capability vocabulary automated reviews scan for:
+
+- **Files**: yes. Document parsing is read-only; the attachment-library scan is a host-side read-only walk over the DSH attachment store; export writes only through `ctx.fs`, inheriting the session sandbox. No deletions, no paths outside the store and session workspace.
+- **Network**: same-origin only. The client half calls the plugin's own routes under `/plugins/dsh-files/*` served by the host process. No third-party endpoints, no telemetry.
+- **Commands**: one, macOS-only — legacy `.doc` files are converted with `textutil` via `execFile`, fixed binary, fixed argument shape, output to stdout. No shell interpolation, no user-supplied binaries.
+- **Credentials**: none. The only environment variable read is `DSH_HOME` (a directory path used to locate the attachment store, mirroring the official home-path resolution) — no secrets, tokens, or keychains.
+- **External services**: none. Everything runs in the host process and its browser view.
+- **Native or executable artifacts**: none in the package. The git tree's `install.sh` is a plain POSIX-sh convenience wrapper (its `curl | sh` one-liner is the documented install path); the published npm `files` set contains JS and docs only.
+
+### Details
 
 - Parsing dependencies are read-only and maintained: `pdfjs-dist` (Mozilla), `mammoth`, `read-excel-file`, `word-extractor` (.doc fallback)
 - ZIP central-directory probing never expands members; malicious archives are rejected safely

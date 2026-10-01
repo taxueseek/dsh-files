@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.6
+
+### 收录元数据补齐（DSH STORE catalog 修复）
+
+0.5.6 不改任何运行时代码，只补 DSH STORE 自动收录检查要求声明的元数据（对应 [AI-Scarlett/DSH-Store#1155](https://github.com/AI-Scarlett/DSH-Store/issues/1155)）：
+
+- **`repository`**：manifest 此前没有 `repository` 字段，固定源检查判定「manifest repository does not match the canonical GitHub repository」。现指向 `git+https://github.com/taxueseek/dsh-files.git`。
+- **`engines.node: ">=20"`**：声明 Node.js 兼容下限（开发与实测的版本）。
+- **`dsh.compatibility`**：机器可读兼容记录——`dsh` 范围串、`dshReleases`（`0.2.0-rc.2: compatible`）与 `dshOperations`（`install`/`start` 在真实宿主 profile 验证为 passed；`uninstall`/`rollback` 如实 unknown）。此前 DSH 兼容只能从 peerDependencies 范围间接推断，逐版本记录全为 unknown。
+- **`@deepseek-ai/dsh-tools` 从 dependencies 改为 peerDependencies**（范围 `^0.1.0-rc.6 || ^0.2.0-rc.1`，与 dsh-clipboard / dsh-lexicon / dsh-healthcheck / dsh-ledger 等已收录插件一致）：`dsh-tools` 是宿主自带组件（host `0.2.0-rc.2` 自身依赖它），插件不应重复安装官方组件；同时在 devDependencies 保留 `0.2.0-rc.2` 供本仓开发/类型检查。
+- README 双语补「权限声明」（文件/网络/命令/凭据/外部服务/原生产物逐项）与 Node 版本要求。
+
 ## 0.5.5
 
 ### SDK 全线对齐宿主 0.2.0-rc.2（修「客户端插件在桌面端不加载」）

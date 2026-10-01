@@ -91,10 +91,15 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | 说明 |
 | --- | --- | --- |
-| 0.5.5 | **0.2.0-rc.2（当前版，已实测）** | SDK 全线对齐宿主 `0.2.0-rc.2`（`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` 三者与宿主同版本），客户端组件解析不再有版本歧义。 |
+| 0.5.6 | **0.2.0-rc.2（当前版，已实测）** | SDK 对齐与 0.5.5 相同；`package.json` 新增机器可读元数据：`repository`、`engines`（Node ≥ 20）、`dsh.compatibility`（`dshReleases` / `dshOperations`）。 |
+| 0.5.5 | 0.2.0-rc.2（已实测） | SDK 全线对齐宿主 `0.2.0-rc.2`（`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` 三者与宿主同版本），客户端组件解析不再有版本歧义。 |
 | 0.5.3–0.5.4 | 0.1.7-alpha.1 | SDK 锁定 `0.1.7-alpha.1`；在 `0.2.0-rc.2` 宿主上客户端图标可能解析失败（见下）。 |
 | 0.5.x | ≥ 0.1.3-alpha.1 | 旧 SDK pin（`0.1.0-rc.x`）；附件面板与 `@` 源早于宿主 `conversation.composer.dock` 槽位。 |
 | 0.6.x | — | 从未发布（已并入 0.5.2/0.5.3），请勿使用。 |
+
+运行环境要求 Node.js ≥ 20（插件开发与实测的下限；harness CLI 本身跑在用户自己的 Node 上）。
+
+`package.json` 里的机器可读兼容记录（`dsh.compatibility`）将 `0.2.0-rc.2` 声明为 compatible，其中 `install` / `start` 两项操作在真实宿主 profile 上验证为 passed（2026-09-29，宿主 `0.2.0-rc.2`）；`uninstall` / `rollback` 如实声明为 unknown（本版本未演练过）。
 
 0.2.0-rc.2 上的实测范围与结论（2026-09-29，本机 `web` profile）：
 
@@ -171,6 +176,19 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 | `list-failed` / `export-failed` / `attachment-read-failed` | 500 | 附上底层原因与可检查项 |
 
 ## 安全
+
+### 权限声明
+
+按自动化审查扫描的能力词汇逐项声明：
+
+- **文件**：有。文档解析只读；附件库扫描由宿主进程对 DSH 附件存储只读遍历；导出落盘只走 `ctx.fs`，继承会话沙箱。无删除，不触碰存储与会话工作区之外的路径。
+- **网络**：仅同源。客户端半区只调用宿主进程提供的本插件路由 `/plugins/dsh-files/*`。无第三方端点，无遥测。
+- **命令**：一条，仅 macOS——旧版 `.doc` 用 `textutil` 经 `execFile` 转换，二进制固定、参数形状固定、输出走 stdout。无 shell 拼接，不执行用户提供的程序。
+- **凭据**：无。唯一读取的环境变量是 `DSH_HOME`（用于定位附件存储的目录路径，与官方 home 路径解析同语义）——不读任何密钥、令牌、钥匙串。
+- **外部服务**：无。全部逻辑运行在宿主进程及其浏览器视图内。
+- **原生/可执行产物**：包内没有。git 树里的 `install.sh` 是普通 POSIX sh 便利脚本（文档用法即 `curl | sh` 一行）；npm 发布面（`files`）只含 JS 与文档。
+
+### 细节
 
 - 解析依赖均为只读维护中库：`pdfjs-dist`（Mozilla 官方）、`mammoth`、`read-excel-file`、`word-extractor`（.doc 兜底）
 - ZIP 中央目录探测不展开任何成员，恶意归档安全拒绝
