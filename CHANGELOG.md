@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.7（未发布）
+
+### 依赖声明归位：`@deepseek-ai/*` 宿主组件从 dependencies 改为 peerDependencies
+
+`@deepseek-ai/cordis` / `dsh-client-ui-primitives` / `dsh-fs` / `schemastery` 与 0.5.6 处理掉的 `dsh-tools` 是同一类东西：**宿主自带组件**（安装态 `dsh` 自身就依赖它们，插件不该再装一份官方组件）。0.5.6 只改了 `dsh-tools`，这四个漏在原地，本版补齐：
+
+- **`@deepseek-ai/cordis`：dependencies → peerDependencies（`^4.0.4`）**。此前被精确钉成 `4.0.3`，而宿主 CLI 自带 `4.0.4`，生态里各插件的 peer 范围也普遍是 `^4.0.1`~`^4.0.4`。结果是在 profile 的 `node_modules/@deepseek-ai/cordis` 里留下一份 **永远不被使用的 `4.0.3` 死副本**——宿主的 profile 解析器会先用安装态条目（`scope: "installation"`）拦截并改写 profile 层的同名请求，真正生效的一直是宿主那份 `4.0.4`；这份 `4.0.3` 只贡献了「同包两版本」的扫描噪音。另外 cordis 在本仓库 `src/` 里**从未被 import**（只有注释里提到），声明成 dependency 本来就没有依据。
+- **`@deepseek-ai/dsh-client-ui-primitives`（`^0.2.0-rc.1`）、`@deepseek-ai/dsh-fs`（`^0.2.0-rc.1`）：dependencies → peerDependencies**。两者都由宿主发货（`dsh-fs` 是 `dsh` 自身的依赖，`ui-primitives` 桌面端内嵌、网页端由宿主提供），而「同一个包名被重复安装」正是 0.5.5 修过的那类故障（客户端模块图里同包两版 → 客户端插件半加载）。`dsh-fs` 的 `FsError` 是**运行时值**，`src/tool.ts` / `src/attachment-tool.ts` 用它做 `instanceof` 判定，跨实例会判错，因此必须与宿主同一实例——peer 是唯一正确写法。
+- **`@deepseek-ai/schemastery`：dependencies → peerDependencies（`^3.18.1`）**。同样是宿主组件（安装态为 `3.18.4`），此前的精确钉版 `3.18.3` 与宿主不一致。
+
+四个包在 `devDependencies` 里保留/补齐精确版本（`cordis 4.0.4`、`dsh-client-ui-primitives 0.2.0-rc.2`、`dsh-fs 0.2.0-rc.2`、`schemastery 3.18.4`，与 0.5.6 保留 `dsh-tools 0.2.0-rc.2` 同例），本仓开发与双 tsconfig 类型检查不受影响。`dependencies` 从此只剩四个纯解析用第三方包：`mammoth` / `pdfjs-dist` / `read-excel-file` / `word-extractor`。
+
+**为什么这是必须而不是风格偏好**：宿主的插件兼容门禁**只读 `peerDependencies`**——`evaluatePluginCompatibility()`（`dsh-app-boot/lib/index.js:286-301`）在 manifest 没有 `peerDependencies` 字段时直接 `return void 0`（不校验），并且只对 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 前缀的名字比对版本。把宿主组件写在 `dependencies` 里等于放弃这层保护：宿主升版时不会给出 `dsh plugin allow-version` 提示，profile 解析器也会把它们当普通依赖处理（`profileDependencyNames()` 同时收 dependencies 与 peerDependencies，所以改成 peer 不损失任何解析能力）。
+
+### 测试与工程
+
+- `pnpm install --frozen-lockfile` → `npm run typecheck`（服务端 + 客户端双 tsconfig）→ `node --test`：**100/100 全绿**（cordis `4.0.4` + 宿主 SDK `0.2.0-rc.2`）。
+- `pnpm-lock.yaml` 重新生成：`@deepseek-ai/cordis` 只剩 `4.0.4` 一个解析条目（旧锁里的 `cordis@4.0.3`、`schemastery@3.18.3` 全部消失），`settings.autoInstallPeers` 保持 `false`，importer 的 `dependencies` 里不再出现被连带安装的 `@deepseek-ai/*`。
+
 ## 0.5.6
 
 ### 收录元数据补齐（DSH STORE catalog 修复）
