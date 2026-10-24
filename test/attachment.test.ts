@@ -142,6 +142,18 @@ test('attachment_list tool reports the store contents', async () => {
   assert.ok(result.totalBytes > 20000)
 })
 
+test('attachment_list query filters by name substring after scan, before truncation', async () => {
+  const tool = defineAttachmentListTool({ attachmentsDir: store })
+  // 命中（大小写不敏感的子串）与未命中两种口径都要对。
+  const hit = (await tool.execute({ query: ' 物业 ' }, {} as never)) as { count: number; items: Array<{ name: string }> }
+  assert.equal(hit.count, 1)
+  assert.equal(hit.items[0].name, FAKE_NAME)
+  const miss = (await tool.execute({ query: '不存在的名字' }, {} as never)) as { count: number; totalBytes: number; items: unknown[] }
+  assert.equal(miss.count, 0)
+  assert.equal(miss.totalBytes, 0)
+  assert.deepEqual(miss.items, [])
+})
+
 test('export_attachment copies bytes into the workspace and emits observations', async () => {
   const { ctx, emitted } = makeExportContext()
   const tool = defineAttachmentExportTool(ctx as never, { attachmentsDir: store })
