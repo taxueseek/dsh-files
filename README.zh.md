@@ -64,7 +64,7 @@ harness 0.1.3 的原生上传把文件存为字节对象，模型拿到一行 ha
 - **扫描件明示**：无文本层的 PDF 返回显式提示而非空串
 - **协作取消**：解析期间监听执行信号，用户取消/会话关闭立即中止
 - **输出呈现**：text 结果投影为官方 `card: 'read'` 读文件卡片；解析走 `ctx.fs`，继承会话沙箱与 fs 观察策略
-- **附件库窗口**：`attachment_list` 列出附件库（原名/sha 前缀/大小/时间）；`export_attachment` 按 sha 前缀或原名导出，`COPYFILE_EXCL` 防覆盖，dest 走 `ctx.fs` 沙箱校验
+- **附件库窗口**：`attachment_list` 列出附件库（原名/sha 前缀/大小/时间；可选 `query` 按名字子串过滤，过滤在 200 条截断之前生效）；`export_attachment` 按 sha 前缀或原名导出，`COPYFILE_EXCL` 防覆盖，dest 走 `ctx.fs` 沙箱校验
 - **附件库（0.5.3）**：输入卡**下方**官方坞位（`conversation.composer.dock`——官方自身在此放会话统计胶囊）里的一枚**官方 Pill 胶囊**「附件库 N 个 · X MB」，点开才展开卡片：附件列表（名/大小/时间，时间为短格式）、**重新插入**（把库内文件作为新附件挂回当前输入区——老会话的上传直接 ride 到新会话，不用回磁盘找）、**下载**（浏览器拉回本机，远程/LAN 场景的正路）、**导出到工作区**（`attachments/` 下自动命名防覆盖）、**删除**（0.6.0 新增——单个附件从库里移除，只进不出成为历史）、文件名搜索（客户端过滤，不打服务端往返；收起再展开超 30 秒才重拉清单）。跟随输入卡列宽。纯 UI 数据，零 prompt token
 - **`@` 附件源（0.5.2）**：`@` 菜单新增附件组（与官方工作区候选共存），选中插入官方 handle 行——模型看到与上传时一致的文件行，直接 read 即可
 - **删除**（0.6.0）：`DELETE /plugins/dsh-files/attachments?ref=sha256:…` 删除单个附件（面板行内垃圾桶按钮，**两步确认**防误点；删除不可逆，无回收站）。安全护栏：ref 必须归一化为 `sha256:<64 位 hex>`、目标必须是库内已扫描到的对象，删除范围严格限定在 `files/<sha2>/<sha>/` 对象目录——路径由内部拼接的 sha 派生，外部输入不参与路径构造；与下载/导出共用同一 Host 信任栅栏
@@ -92,7 +92,8 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | 说明 |
 | --- | --- | --- |
-| 0.6.0 | **0.2.1-alpha.3（当前，在跑）** | 附件删除路由 + 分片级扫描缓存 + 宿主组件依赖归位（PR #14）；面与 0.5.x 相同，无新增座位依赖。 |
+| 0.6.2 | **0.2.1-rc.3（当前，在跑——CLI；桌面 App 仍 rc.2）** | SDK devDependencies 全线对齐 `0.2.1-rc.3`（cordis 4.0.5、schemastery 3.18.5）；peer 范围显式覆盖宿主 `0.2.1` 线——semver 预发元组规则下 `^0.2.0-rc.1` 不匹配 `0.2.1-rc.x`。无 API 漂移：typecheck + 214 测试 + #17 生命周期探针对 rc.3 宿主组件复跑全绿。 |
+| 0.6.1 | 0.2.1-rc.2 | 附件路由生命周期修复（#17：路由 disposer 绑进注入 fiber）+ 解析器延迟导入（宿主启动 -200ms）+ `attachment_list` 按名过滤；面与 0.6.0 相同。兼容范围不变——`^0.2.1-alpha.3` 经 semver 验证已覆盖 `rc.2`。 |
 | 0.5.6 | 0.2.0-rc.2（已实测） | SDK 对齐与 0.5.5 相同；`package.json` 新增机器可读元数据：`repository`、`engines`（Node ≥ 20）、`dsh.compatibility`（`dshReleases` / `dshOperations`）。 |
 | 0.5.5 | 0.2.0-rc.2（已实测） | SDK 全线对齐宿主 `0.2.0-rc.2`（`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` 三者与宿主同版本），客户端组件解析不再有版本歧义。 |
 | 0.5.3–0.5.4 | 0.1.7-alpha.1 | SDK 锁定 `0.1.7-alpha.1`；在 `0.2.0-rc.2` 宿主上客户端图标可能解析失败（见下）。 |
@@ -100,7 +101,7 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 运行环境要求 Node.js ≥ 20（插件开发与实测的下限；harness CLI 本身跑在用户自己的 Node 上）。
 
-`package.json` 里的机器可读兼容记录（`dsh.compatibility`）将 `0.2.0-rc.2` 声明为 compatible，其中 `install` / `start` 两项操作在真实宿主 profile 上验证为 passed（2026-09-29，宿主 `0.2.0-rc.2`）；`uninstall` / `rollback` 如实声明为 unknown（本版本未演练过）。0.6.0 起同时声明 `0.2.1-alpha.3`——维护者日常在跑的 `alpha` 线；该宿主上的操作项未正式演练，保持 unknown。
+`package.json` 里的机器可读兼容记录（`dsh.compatibility`）将 `0.2.0-rc.2` 声明为 compatible，其中 `install` / `start` 两项操作在真实宿主 profile 上验证为 passed（2026-09-29，宿主 `0.2.0-rc.2`）；`uninstall` / `rollback` 如实声明为 unknown（本版本未演练过）。0.6.0 起同时声明维护者日常在跑的 `0.2.1` 线——截至 0.6.2 为 `rc.3`（桌面 App 仍发 `rc.2`，两者都在支持面内）；插件在该线上持续运行，#17 生命周期探针也对取自 CLI 安装树的 rc.3 宿主组件跑绿。
 
 0.2.0-rc.2 上的实测范围与结论（2026-09-29，本机 `web` profile）：
 
@@ -109,7 +110,7 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 - 宿主插件契约的改动是**加法**：`dsh-tools` 0.2.0 只新增可选成员（如 `ToolDefinition.projectContent?`、`PreToolDecision.ask.displayReason?`），无破坏性变更
 - 单一反例值得记下：`@deepseek-ai/dsh-client-runtime` 是**独立行**（不是种子模块），插件 `dsh.client.inject` 里声明它要求宿主名册存在该行——官方 0.2.0 名册已移除该行，声明它的客户端插件会整树加载失败。dsh-files 不声明它，故不受影响
 
-本插件跟随维护者实际在跑的 `alpha` 线（当前 `0.2.1-alpha.3`）；分发走上面的 git 安装——npm 上同名包是无关的第三方占位包。
+本插件跟随维护者实际在跑的宿主线（当前 `0.2.1-rc.3`）；分发走上面的 git 安装——npm 上同名包是无关的第三方占位包。
 
 ## 配置
 
