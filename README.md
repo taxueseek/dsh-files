@@ -64,7 +64,7 @@ Native upload in harness 0.1.3 stores files as byte objects and hands the model 
 - **Scanned PDFs are explicit**: a PDF with no text layer returns an explicit notice, not an empty string
 - **Cooperative cancellation**: parsing listens on the execution signal; user cancel / session close aborts immediately
 - **Output projection**: text results project onto the official `card: 'read'` file card; reads go through `ctx.fs` and inherit session sandbox and fs-observation policy
-- **Attachment-store window**: `attachment_list` enumerates the store (original name / sha prefix / size / mtime); `export_attachment` copies by sha prefix or exact name with `COPYFILE_EXCL` no-overwrite, dest validated through the `ctx.fs` sandbox
+- **Attachment-store window**: `attachment_list` enumerates the store (original name / sha prefix / size / mtime; optional `query` filters by name substring before the 200-item cap); `export_attachment` copies by sha prefix or exact name with `COPYFILE_EXCL` no-overwrite, dest validated through the `ctx.fs` sandbox
 - **Attachment library (0.5.3)**: one **official Pill** in the host's `conversation.composer.dock` slot (where the host itself renders session-stats pills) reading `附件库 N · X MB`; clicking expands the card below it: the library list (name/size/short time), **re-insert** (mount a stored file back onto the composer as a fresh official attachment — an old session's upload rides any new session without re-picking from disk), **download** (pull the file to the browser — the right path for remote/LAN use), **export to workspace** (auto-named, collision-safe under `attachments/`), **delete** (new in 0.6.0 — remove a single attachment from the store; irreversible, no trash bin) and name search (filtered client-side — no server round-trip per keystroke; the list refetches on re-expand only after 30s). It follows the composer column width; UI data only, zero prompt tokens
 - **`@` attachment source (0.5.2)**: the `@` menu gains an attachment group alongside the host's workspace candidates; picking one inserts the official handle line, so the model sees the same file line it saw at upload
 - **Download/export routes (0.5.2)**: bytes flow through the official `AttachmentStore.readFileStream` (integrity-checked), behind two gates — Host trust fence (loopback or `trustedHosts`) and a `sha256:` reference whitelist; oversized answers 413
@@ -92,7 +92,8 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | Notes |
 | --- | --- | --- |
-| 0.6.0 | **0.2.1-alpha.3 (current, running)** | Attachment delete route + shard-scan cache + host-component peer relocation (PR #14); same surfaces as 0.5.x, no new seat dependencies. |
+| 0.6.1 | **0.2.1-rc.2 (current, running)** | Attachment-route lifecycle fix (#17: route disposers bound to the injection fiber), lazy parser loading (~200 ms off every host start) and `attachment_list` name filter; same surfaces as 0.6.0. Range unchanged — `^0.2.1-alpha.3` already covers `rc.2` (verified with semver). |
+| 0.6.0 | 0.2.1-alpha.3 | Attachment delete route + shard-scan cache + host-component peer relocation (PR #14); same surfaces as 0.5.x, no new seat dependencies. |
 | 0.5.6 | 0.2.0-rc.2 (measured) | Same SDK alignment as 0.5.5; `package.json` now carries machine-readable metadata: `repository`, `engines` (Node ≥ 20), and `dsh.compatibility` (`dshReleases` / `dshOperations`). |
 | 0.5.5 | 0.2.0-rc.2 (measured) | SDK aligned with the host `0.2.0-rc.2` (`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` all at the host version), so client components resolve without a version ambiguity. |
 | 0.5.3–0.5.4 | 0.1.7-alpha.1 | SDK pinned at `0.1.7-alpha.1`; on a `0.2.0-rc.2` host the client icons may fail to resolve (see below). |
@@ -100,9 +101,9 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 Requires Node.js ≥ 20 (the floor the plugin is developed and tested on; the harness CLI itself runs on the user's Node).
 
-The machine-readable compatibility record in `package.json` (`dsh.compatibility`) declares `0.2.0-rc.2` as compatible, with `install` / `start` operations verified as passed on a real host profile (2026-09-29, host `0.2.0-rc.2`); `uninstall` / `rollback` are declared `unknown` because they have not been exercised on this release. Since 0.6.0 the record also declares `0.2.1-alpha.3` — the `alpha` host the maintainer runs daily; its operations row is not formally exercised and stays `unknown`.
+The machine-readable compatibility record in `package.json` (`dsh.compatibility`) declares `0.2.0-rc.2` as compatible, with `install` / `start` operations verified as passed on a real host profile (2026-09-29, host `0.2.0-rc.2`); `uninstall` / `rollback` are declared `unknown` because they have not been exercised on this release. Since 0.6.0 the record also declares the `0.2.1` line the maintainer runs daily — as of 0.6.1 that is the `rc.2` stable host, on which the plugin is exercised continuously (daily driving) and against which the #17 lifecycle probe ran with real host components.
 
-The plugin tracks the `alpha` line the maintainer actually runs (currently `0.2.1-alpha.3`); distribution is the git install above — the npm name is an unrelated third-party placeholder.
+The plugin tracks the host line the maintainer actually runs (currently `0.2.1-rc.2`); distribution is the git install above — the npm name is an unrelated third-party placeholder.
 
 What was actually checked on 0.2.0-rc.2 (2026-09-29, `web` profile) and what it means:
 

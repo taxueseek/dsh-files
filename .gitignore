@@ -8,3 +8,7 @@ pnpm-workspace.yaml
 
 # 本地回滚备份与打包产物（不入库）
 *.bak-*
+# 本地探针/复现工作目录（#17 复现脚本等）与 npm install 副产物（锁文件真源是 pnpm-lock.yaml）
+tmp/
+package-lock.json
+.mimosa/

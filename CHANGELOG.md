@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.1 — 2026-10-24
+
+### 性能：解析器延迟导入，宿主启动少付 ~200ms
+
+- **插件入口冷导入 152ms → 12-16ms（≈12 倍）**。pdfjs legacy（130ms）、mammoth（42ms）、read-excel-file（31ms）此前挂在 `parse/index.ts` 顶层，插件的 apply 在宿主每次启动都执行，而 read_document 可能整个会话都不被调用——等于每次宿主启动都交启动税。现按格式推迟到首次解析时加载（word-extractor 自 0.4.x 起已是动态导入，本次把同一纪律推广到其余三个；text 走 TextDecoder 保持顶层）。
+- 不动 0.5.0 的既有结论：LRU 解析缓存经实测是噪音（180-235ms 解析成本对比模型延迟），本改动不缓存解析结果，只是不在启动期加载解析器。
+- 已核：编译产物动态导入路径重写正确（TS 5.9 `rewriteRelativeImportExtensions`），延迟加载后解析行为与原版一致（全量测试通过）。
+
+### 能力：attachment_list 支持 query 过滤
+
+- 新增可选 `query` 参数（文件名字子串、大小写不敏感）：过滤发生在 200 条截断之前，附件库超过一屏时按名检索仍然可达，而不是被前 200 条挡在外面；`count` / `totalBytes` 按过滤后口径上报。面板不受影响（本来就拉全量在客户端过滤）。
+
+### 兼容记录：0.2.1-rc.2（当前运行线）
+
+- README 兼容表新增 `0.6.1 → 0.2.1-rc.2` 一行，`dshReleases` 加 `0.2.1-rc.2: compatible`。兼容范围不变——`^0.2.1-alpha.3` 经 semver 验证已覆盖 `rc.2` / `rc.3` / `alpha.5`，要到 `0.2.2` 才需要改范围；宿主自带件同验：cordis 4.0.5 在 peer `^4.0.3` 内、schemastery 3.18.5 在 `^3.18.1` 内。本插件在 0.2.1-rc.2 上日常运行，#17 生命周期探针也是对这一版宿主组件跑的。
+
+### 修复：插件移除/重载后附件路由不注销（响应外部反馈 [#17](https://github.com/taxueseek/dsh-files/issues/17)）
+
+- **问题**：0.6.0 的 `registerAttachmentRoutes` 丢弃了三次 `webServer.register` 返回的 disposer，而真实宿主的 register 只写路由注册表、不随插件 fiber 清理（#17 用真实宿主组件——Loader / WebServer / LocalAttachmentStore——探针实证）。后果两条：插件**移除**后三条 `/plugins/dsh-files/attachments*` 路由泄漏、继续可访问（探针里下载仍 200，预期 404）；插件**重载**时撞宿主 `duplicate exact route`（被 catch 成 warn），新配置不生效、旧 `maxDownloadBytes` 继续放行——探针把上限收到 1 字节后 21 字节附件照样下载成功。
+- **修复**：`apply()` 的注入回调把 webServer 包一层，每次注册的 disposer 经 `loopCtx.effect` 绑进注入 fiber——插件移除/重载时随 fiber 自动注销。真实宿主探针复验：移除后 404、重载后新上限生效（413）、duplicate 告警消失；同探针对宿主 dsh-tools / dsh-system-prompt 的核查确认工具与 systemPrompt 段落本就随 fiber 注销，泄漏面只有 webServer 路由这一处。
+- **回归测试**：新增 `test/regression-0.6.1.test.ts` 三条，在 `apply()` 的 inject 接缝按 cordis 真实 effect 语义建模（generator 体立即执行、yield 出的 disposer 由 fiber 持有、fiber 卸载时执行），钉住「注册即留 disposer / 卸载即注销 / 重载不撞 duplicate」。对 0.6.0 代码三发全红，对本修复全绿。loader 生命周期依赖宿主包、无法进 CI，完整探针脚本见 issue #17。
+- 升级无动作：peerDependencies 范围、宿主兼容记录、配置项均不变，0.6.1 是 drop-in 补丁。
+
 ## 0.6.0 — 2026-10-16
 
 > 上个 release 是 v0.5.1（09-05）；0.5.2–0.5.7 的内容从未单独发版，随本版一并发布。因本版含 breaking 改动（附件删除路由 + 宿主组件依赖从 dependencies 归位 peerDependencies），版本号按 semver 跳到 0.6.0，不再占用 0.5.7。另：兼容记录新增 `0.2.1-alpha.3`（维护者当前在跑的宿主线）。
