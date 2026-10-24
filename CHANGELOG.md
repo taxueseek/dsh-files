@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.2 — 2026-10-24
+
+### SDK 对齐宿主 0.2.1-rc.3（CLI 已升 rc.3，桌面 App 仍在 rc.2，两者都覆盖）
+
+- **devDependencies 全线跟进 `0.2.1-rc.3`**：13 个 `@deepseek-ai/*`（dsh-invariants 无 rc.3 版本，保持 `0.2.0-rc.2`）；cordis 4.0.3 → 4.0.5、schemastery 3.18.3 → 3.18.5，与宿主发货版本一致。
+- **peerDependencies 显式覆盖宿主 0.2.1 线**：`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` / `dsh-client-runtime` 各加 `|| ^0.2.1-alpha.1`。依据是 semver 预发元组规则——`^0.2.0-rc.1` 不匹配 `0.2.1-rc.x`（元组 0.2.1 ≠ 0.2.0），旧范围此前靠宿主兼容检查的宽松度碰巧通过；显式声明后不再依赖宽松度。旧 rc.2 与 App 内嵌 ui-primitives `0.2.1-rc.2` 均仍在范围内（semver 实证）。
+- **无 API 漂移**：rc.3 类型面下 typecheck 通过、214 测试全绿、#17 生命周期探针对 rc.3 宿主组件（cordis-plugin-loader 1.0.6 / host-webserver 0.2.1-rc.3 / attachment-local 0.2.1-rc.3，取自本机 CLI 安装树）复跑 7/7 通过——路由随 fiber 注销的修复在 rc.3 上行为一致。
+- `dshReleases` 声明 `0.2.1-rc.3: compatible`；`dsh` 兼容范围串不变（`^0.2.1-alpha.3` 经 semver 验证已覆盖 rc.3）。升级无动作，drop-in。
+
 ## 0.6.1 — 2026-10-24
 
 ### 性能：解析器延迟导入，宿主启动少付 ~200ms

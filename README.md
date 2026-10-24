@@ -92,7 +92,8 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | Notes |
 | --- | --- | --- |
-| 0.6.1 | **0.2.1-rc.2 (current, running)** | Attachment-route lifecycle fix (#17: route disposers bound to the injection fiber), lazy parser loading (~200 ms off every host start) and `attachment_list` name filter; same surfaces as 0.6.0. Range unchanged — `^0.2.1-alpha.3` already covers `rc.2` (verified with semver). |
+| 0.6.2 | **0.2.1-rc.3 (current, running — CLI; desktop app still rc.2)** | SDK devDependencies aligned to `0.2.1-rc.3` (cordis 4.0.5, schemastery 3.18.5); peer ranges widened to cover the host `0.2.1` line explicitly — by the semver prerelease tuple rule `^0.2.0-rc.1` does not match `0.2.1-rc.x`. No API drift: typecheck + 214 tests + the #17 lifecycle probe re-run green on rc.3 host components. |
+| 0.6.1 | 0.2.1-rc.2 | Attachment-route lifecycle fix (#17: route disposers bound to the injection fiber), lazy parser loading (~200 ms off every host start) and `attachment_list` name filter; same surfaces as 0.6.0. Range unchanged — `^0.2.1-alpha.3` already covers `rc.2` (verified with semver). |
 | 0.6.0 | 0.2.1-alpha.3 | Attachment delete route + shard-scan cache + host-component peer relocation (PR #14); same surfaces as 0.5.x, no new seat dependencies. |
 | 0.5.6 | 0.2.0-rc.2 (measured) | Same SDK alignment as 0.5.5; `package.json` now carries machine-readable metadata: `repository`, `engines` (Node ≥ 20), and `dsh.compatibility` (`dshReleases` / `dshOperations`). |
 | 0.5.5 | 0.2.0-rc.2 (measured) | SDK aligned with the host `0.2.0-rc.2` (`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` all at the host version), so client components resolve without a version ambiguity. |
@@ -101,9 +102,9 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 Requires Node.js ≥ 20 (the floor the plugin is developed and tested on; the harness CLI itself runs on the user's Node).
 
-The machine-readable compatibility record in `package.json` (`dsh.compatibility`) declares `0.2.0-rc.2` as compatible, with `install` / `start` operations verified as passed on a real host profile (2026-09-29, host `0.2.0-rc.2`); `uninstall` / `rollback` are declared `unknown` because they have not been exercised on this release. Since 0.6.0 the record also declares the `0.2.1` line the maintainer runs daily — as of 0.6.1 that is the `rc.2` stable host, on which the plugin is exercised continuously (daily driving) and against which the #17 lifecycle probe ran with real host components.
+The machine-readable compatibility record in `package.json` (`dsh.compatibility`) declares `0.2.0-rc.2` as compatible, with `install` / `start` operations verified as passed on a real host profile (2026-09-29, host `0.2.0-rc.2`); `uninstall` / `rollback` are declared `unknown` because they have not been exercised on this release. Since 0.6.0 the record also declares the `0.2.1` line the maintainer runs daily — as of 0.6.2 that is the `rc.3` CLI (the desktop app still ships `rc.2` and both stay covered); the plugin is exercised continuously on it, and the #17 lifecycle probe ran green against rc.3 host components taken from the CLI install tree.
 
-The plugin tracks the host line the maintainer actually runs (currently `0.2.1-rc.2`); distribution is the git install above — the npm name is an unrelated third-party placeholder.
+The plugin tracks the host line the maintainer actually runs (currently `0.2.1-rc.3`); distribution is the git install above — the npm name is an unrelated third-party placeholder.
 
 What was actually checked on 0.2.0-rc.2 (2026-09-29, `web` profile) and what it means:
 
