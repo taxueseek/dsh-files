@@ -1,6 +1,6 @@
 {
   "name": "dsh-files",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "DeepSeek Harness plugin: read_document (text/PDF/DOCX/XLSX/.doc the built-in read rejects as binary), attachment_list/export_attachment model tools, and a zero-token attachment dock (pill + library card, + menu folder upload, download/export/@ source) closing the host attachment library visibility gap.",
   "keywords": [
     "deepseek",
@@ -37,7 +37,6 @@
   "dsh": {
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-client-ui-conversation"
       ],
       "platform": "web"
