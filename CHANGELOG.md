@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.3 — 2026-10-26
+
+### 客户端注入面收窄
+
+- 移除 `dsh.client.inject` 里已废弃的 `@deepseek-ai/dsh-client-runtime` 垫片声明，只保留 `@deepseek-ai/dsh-client-ui-conversation`。该垫片在宿主 0.2.1 线已无对应组件，留着会让 bundle patch 的注入目标解析多走一层。
+- 无运行时行为变化：214 项测试全绿，typecheck 通过。
+
 ## 0.6.2 — 2026-10-24
 
 ### SDK 对齐宿主 0.2.1-rc.3（CLI 已升 rc.3，桌面 App 仍在 rc.2，两者都覆盖）
