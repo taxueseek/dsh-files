@@ -35,7 +35,7 @@ dsh-files 就是补这两个洞的。**读**：AI 能读懂 PDF / Word / Excel �
 下面把一个文件在会话里的**四段生命周期**拆开看，每段补一块官方留白：
 
 - **进**：**回形针旁的文件夹按钮**（+ 菜单里另有同名命令入口）——浏览器递归展平（过滤 Office 锁文件、`.DS_Store`、`.env` 等系统/隐藏文件），逐文件进入官方原生附件管线
-- **读**：**`read_document` 工具**——读内置 read 工具拒绝的二进制文档（PDF / DOC / DOCX / XLSX）与增强文本读取（编码回退、分页、sheet 级访问）
+- **读**：**`read_document` 工具**——读内置 read 工具拒绝的二进制文档（PDF / DOC / DOCX / PPTX / XLSX）与增强文本读取（编码回退、分页、page_range 定向抽页、Markdown 结构化表格、sheet 级访问）
 - **管**：**`attachment_list` / `export_attachment` 工具 + 面板内删除**——附件库对模型可见（文件名/大小/sha），一键拷贝进工作区供 read/edit/bash 再加工；面板里可直接删除单个附件（不再只进不出）
 - **取**：**附件库面板**（输入卡下方官方坞位，收起为一枚官方胶囊）+ 下载/导出路由 + `@` 附件源——附件库对用户可见可下载（远程/LAN 把文件拉回本机），`@` 菜单插入官方 handle 行（与上传时模型所见一致）
 
@@ -52,6 +52,9 @@ harness 0.1.3 的原生上传把文件存为字节对象，模型拿到一行 ha
 ## 能力
 
 - **内容嗅探**：PDF 头 / OLE Compound File（Word 97-2003）/ ZIP 中央目录成员 / UTF-8（fatal）/ UTF-16 BOM / GB18030，全部从字节判定，扩展名伪装（exe 改 .pdf）一律拒绝；格式 hint 仅作字节完全未知时的兜底
+- **PPTX 演示文稿（0.7.0）**：纯 JS / 零原生依赖解析 PresentationML，按幻灯片顺序提取正文、段落与表格（智能转换为 Markdown 表格），支持 `page_range`
+- **定向抽页（`page_range`）**：PDF 与 PPTX 支持指定页码或范围（如 `"1-3, 5"`），精准取需，避免超长文档消耗海量上下文预算
+- **Markdown 结构化输出（`output_format`）**：DOCX 与 XLSX 智能渲染结构化 Markdown 标题与表格（默认），亦可切回 `text` 纯文本
 - **.doc 老格式**：macOS 走系统 `textutil`（金标对照中正文与日期段最完整），其他平台回退纯 JS `word-extractor`
 - **编码链**：UTF-16 BOM → UTF-8（fatal，拒 NUL）→ GB18030（fatal）→ UTF-16 无 BOM（高置信度守卫），中文 GBK 与无 BOM UTF-16 均可读
 - **分页读取**：行号 + offset/limit 翻页；窗口字符预算按格式差异化（text 满额、xlsx 3/4、pdf/doc/docx 1/2），超限显式标记剩余行数
@@ -92,7 +95,8 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | 说明 |
 | --- | --- | --- |
-| 0.6.2 | **0.2.1-rc.3（当前，在跑——CLI；桌面 App 仍 rc.2）** | SDK devDependencies 全线对齐 `0.2.1-rc.3`（cordis 4.0.5、schemastery 3.18.5）；peer 范围显式覆盖宿主 `0.2.1` 线——semver 预发元组规则下 `^0.2.0-rc.1` 不匹配 `0.2.1-rc.x`。无 API 漂移：typecheck + 214 测试 + #17 生命周期探针对 rc.3 宿主组件复跑全绿。 |
+| 0.7.0 | **0.2.2-rc.1（当前，在跑——CLI 与桌面 App 双端）** | 吸纳 PPTX 演示文稿解析、`page_range` 定向页码切片与 Markdown 结构化输出；通过 `plugin-fast-adapt` 常设规则 100 分审计，peer 覆盖 `^0.2.2-0`，全量测试 222/222 全绿。 |
+| 0.6.2 | 0.2.1-rc.3 | SDK devDependencies 全线对齐 `0.2.1-rc.3`（cordis 4.0.5、schemastery 3.18.5）；peer 范围显式覆盖宿主 `0.2.1` 线——semver 预发元组规则下 `^0.2.0-rc.1` 不匹配 `0.2.1-rc.x`。无 API 漂移：typecheck + 214 测试 + #17 生命周期探针对 rc.3 宿主组件复跑全绿。 |
 | 0.6.1 | 0.2.1-rc.2 | 附件路由生命周期修复（#17：路由 disposer 绑进注入 fiber）+ 解析器延迟导入（宿主启动 -200ms）+ `attachment_list` 按名过滤；面与 0.6.0 相同。兼容范围不变——`^0.2.1-alpha.3` 经 semver 验证已覆盖 `rc.2`。 |
 | 0.5.6 | 0.2.0-rc.2（已实测） | SDK 对齐与 0.5.5 相同；`package.json` 新增机器可读元数据：`repository`、`engines`（Node ≥ 20）、`dsh.compatibility`（`dshReleases` / `dshOperations`）。 |
 | 0.5.5 | 0.2.0-rc.2（已实测） | SDK 全线对齐宿主 `0.2.0-rc.2`（`dsh-fs` / `dsh-tools` / `dsh-client-ui-primitives` 三者与宿主同版本），客户端组件解析不再有版本歧义。 |

@@ -22,8 +22,8 @@ import { windowLines } from './parse/text.ts'
  *   引导模型用 offset/limit 翻页增量获取。
  */
 export function formatOutputBudget(format: DocumentFormat, base: number): number {
-  // pdf/doc/docx：叙述性流式文本，模型通常只需关键段落，减半防上下文稀释。
-  if (format === 'pdf' || format === 'doc' || format === 'docx') return Math.max(2000, Math.floor(base / 2))
+  // pdf/doc/docx/pptx：叙述性流式文本，模型通常只需关键段落，减半防上下文稀释。
+  if (format === 'pdf' || format === 'doc' || format === 'docx' || format === 'pptx') return Math.max(2000, Math.floor(base / 2))
   // xlsx：结构化表格信息密度高，但行多列宽也会撑爆上下文；给 3/4，配合
   // windowLines 的截断标记引导模型 offset 翻页增量取。
   if (format === 'xlsx') return Math.max(2000, Math.floor(base * 0.75))
@@ -48,6 +48,8 @@ interface ParsedArgs {
   format: 'auto' | DocumentFormat
   sheet?: number
   listSheets: boolean
+  pageRange?: string
+  outputFormat: 'markdown' | 'text'
 }
 
 function assertPositiveInteger(value: number, label: string): void {
@@ -66,7 +68,7 @@ function parseArgs(args: Record<string, unknown>, config: ReadDocumentConfig): P
   if (limit > config.readLimit) throw new Error(`limit must be less than or equal to ${config.readLimit}`)
   const format = args.format === undefined ? 'auto' : args.format
   if (typeof format !== 'string' || (format !== 'auto' && !SUPPORTED_FORMATS.has(format))) {
-    throw new Error(`unsupported format "${String(format)}" (expected auto, pdf, doc, docx, xlsx or text)`)
+    throw new Error(`unsupported format "${String(format)}" (expected auto, pdf, doc, docx, pptx, xlsx or text)`)
   }
   const sheet = typeof args.sheet === 'number' ? args.sheet : undefined
   if (sheet !== undefined && (!Number.isInteger(sheet) || sheet < 1)) {
@@ -76,7 +78,9 @@ function parseArgs(args: Record<string, unknown>, config: ReadDocumentConfig): P
   if (listSheets && sheet !== undefined) {
     throw new Error('list_sheets and sheet are mutually exclusive: list first, then read a specific sheet')
   }
-  return { filePath, offset, limit, format: format as ParsedArgs['format'], sheet, listSheets }
+  const pageRange = typeof args.page_range === 'string' && args.page_range.trim() !== '' ? args.page_range.trim() : undefined
+  const outputFormat = args.output_format === 'text' ? 'text' : 'markdown'
+  return { filePath, offset, limit, format: format as ParsedArgs['format'], sheet, listSheets, pageRange, outputFormat }
 }
 
 /** The session workspace cwd for this call, when one applies. */
@@ -132,7 +136,7 @@ export function defineReadDocumentTool(ctx: {
   return defineTool({
     name: 'read_document',
     description:
-      'Read text/PDF/DOC/DOCX/XLSX the plain read tool cannot; page with offset/limit, list_sheets then sheet for XLSX.',
+      'Read text/PDF/DOC/DOCX/PPTX/XLSX the plain read tool cannot; page with offset/limit, page_range for PDF/PPTX, list_sheets then sheet for XLSX.',
     parameters: {
       file_path: {
         type: 'string',
@@ -141,7 +145,7 @@ export function defineReadDocumentTool(ctx: {
       },
       format: {
         type: 'string',
-        enum: ['auto', 'pdf', 'doc', 'docx', 'xlsx', 'text'],
+        enum: ['auto', 'pdf', 'doc', 'docx', 'pptx', 'xlsx', 'text'],
         description: 'Optional format override; the sniffed content wins over this hint.'
       },
       offset: {
@@ -159,6 +163,15 @@ export function defineReadDocumentTool(ctx: {
       list_sheets: {
         type: 'boolean',
         description: 'List the workbook sheet names without reading cells (XLSX only).'
+      },
+      page_range: {
+        type: 'string',
+        description: 'Page or slide numbers/ranges to extract (1-based, e.g. "1-3, 5"). Supported for PDF and PPTX.'
+      },
+      output_format: {
+        type: 'string',
+        enum: ['markdown', 'text'],
+        description: 'Output format style. Defaults to "markdown" with structured headings and tables, or "text" for plain unformatted output.'
       }
     },
     output: {
@@ -167,7 +180,7 @@ export function defineReadDocumentTool(ctx: {
         additionalProperties: false,
         properties: {
           path: { type: 'string', required: true },
-          format: { type: 'string', required: true, enum: ['pdf', 'doc', 'docx', 'xlsx', 'text'] },
+          format: { type: 'string', required: true, enum: ['pdf', 'doc', 'docx', 'pptx', 'xlsx', 'text'] },
           offset: { type: 'integer', required: true },
           lines: {
             type: 'array',
@@ -238,11 +251,11 @@ export function defineReadDocumentTool(ctx: {
       if (headFormat === null && input.format === 'auto') {
         ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
         throw new FsError(
-          `cannot read "${target.displayPath}": unrecognized file content (expected text, PDF, DOC, DOCX or XLSX)`,
+          `cannot read "${target.displayPath}": unrecognized file content (expected text, PDF, DOC, DOCX, PPTX or XLSX)`,
           'FS_NOT_TEXT'
         )
       }
-      // zip 需要中央目录（在文件尾部）才能区分 docx/xlsx；
+      // zip 需要中央目录（在文件尾部）才能区分 docx/xlsx/pptx；
       // headFormat 为 null 只发生在显式 format 场景，走完整嗅探兜底。
       // auto 模式下的 hint 取扩展名：字节完全未知时（且非已知二进制）
       // 允许按扩展名兜底解析，解析器仍会校验结构并 loud fail。
@@ -254,16 +267,24 @@ export function defineReadDocumentTool(ctx: {
       if (format === null) {
         ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
         throw new FsError(
-          `cannot read "${target.displayPath}": unrecognized file content (expected text, PDF, DOC, DOCX or XLSX)`,
+          `cannot read "${target.displayPath}": unrecognized file content (expected text, PDF, DOC, DOCX, PPTX or XLSX)`,
           'FS_NOT_TEXT'
         )
       }
-      // sheet/list_sheets 只对 xlsx 有意义：对 PDF/DOCX/text 显式报错，
+      // sheet/list_sheets 只对 xlsx 有意义：对 PDF/DOCX/PPTX/text 显式报错，
       // 防止模型以为 sheet 参数生效而拿到完整（未按 sheet 过滤）内容。
       if ((input.sheet !== undefined || input.listSheets) && format !== 'xlsx') {
         ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
         throw new FsError(
           `cannot read "${target.displayPath}": sheet/list_sheets parameters are only supported for XLSX files (detected format: ${format})`,
+          'FS_NOT_TEXT'
+        )
+      }
+      // page_range 只对具有天然分页/幻灯片概念的 PDF 与 PPTX 有意义。
+      if (input.pageRange !== undefined && format !== 'pdf' && format !== 'pptx') {
+        ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)
+        throw new FsError(
+          `cannot read "${target.displayPath}": page_range parameter is only supported for PDF and PPTX files (detected format: ${format})`,
           'FS_NOT_TEXT'
         )
       }
@@ -273,7 +294,9 @@ export function defineReadDocumentTool(ctx: {
         sheetRowLimit: config.sheetRowLimit,
         maxSheets: config.maxSheets,
         sheet: input.sheet,
-        listOnly: input.listSheets
+        listOnly: input.listSheets,
+        pageRange: input.pageRange,
+        outputFormat: input.outputFormat
       }, exec.signal)
       const window = windowLines(text, input.offset, input.limit, formatOutputBudget(format, config.maxOutputChars))
       ctx.emit('fs/observed', target, { kind: 'present', version: info.version }, exec)

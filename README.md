@@ -35,7 +35,7 @@ dsh-files fills exactly those two holes. **Read**: the AI gets the text out of P
 Here is a file's **four-stage session lifecycle**, one official gap filled per stage:
 
 - **Ingest**: the **folder button next to the native paperclip** (plus a same-named entry in the official "+" command menu) — the browser flattens the directory (Office lock files, `.DS_Store`, `.env` and other system/hidden files are filtered), and every file enters the official native attachment pipeline
-- **Read**: the **`read_document` tool** — structured text extraction for binary documents (PDF / DOC / DOCX / XLSX) plus enhanced text reading (encoding fallback, paging, sheet-level access)
+- **Read**: the **`read_document` tool** — structured text extraction for binary documents (PDF / DOC / DOCX / PPTX / XLSX) plus enhanced text reading (encoding fallback, paging, page_range slicing, Markdown tables, sheet-level access)
 - **Manage**: the **`attachment_list` / `export_attachment` tools** plus **in-panel delete** — make the attachment store visible to the model (name/size/sha) and copy a file into the workspace for read/edit/bash to work on; the panel also removes a single attachment (the store is no longer append-only)
 - **Fetch back**: the **attachment dock** (one official pill below the composer card) plus download/export routes and an `@` attachment source — the store becomes visible to users and files can be pulled into the browser (the right path for remote/LAN deployments); the `@` menu inserts the official handle line, identical to what the model saw at upload
 
@@ -52,6 +52,9 @@ Native upload in harness 0.1.3 stores files as byte objects and hands the model 
 ## Capabilities
 
 - **Content sniffing**: PDF header / OLE Compound File (Word 97-2003) / ZIP central-directory members / UTF-8 (fatal) / UTF-16 BOM / GB18030 — decided from bytes, never from extensions; disguised files (an exe renamed .pdf) are rejected. The format hint is only a last resort when bytes are fully unknown
+- **PPTX presentations (0.7.0)**: pure JS / zero native dependency parser for PresentationML, extracting slides in sequence with body paragraphs, shapes, and tables (formatted as Markdown tables), with `page_range` support
+- **Page slicing (`page_range`)**: PDF and PPTX support targeted extraction of specific pages/slides (e.g. `"1-3, 5"`), saving significant context budget on large documents
+- **Markdown structured output (`output_format`)**: DOCX and XLSX intelligently output structured Markdown headings and tables (default), or can be toggled to plain unformatted `text`
 - **Legacy .doc**: macOS uses the system `textutil` (most complete body and date lines in the gold-standard comparison), other platforms fall back to pure-JS `word-extractor`
 - **Encoding chain**: UTF-16 BOM → UTF-8 (fatal, NUL rejected) → GB18030 (fatal) → UTF-16 without BOM (high-confidence guard); GBK Chinese and BOM-less UTF-16 both read
 - **Paged reads**: line numbers + offset/limit; the per-call character budget differs by format (text full, xlsx 3/4, pdf/doc/docx 1/2), overflow truncates with an explicit remaining-lines marker
@@ -92,7 +95,8 @@ dsh plugin --profile web add git+https://github.com/taxueseek/dsh-files.git
 
 | dsh-files | Harness | Notes |
 | --- | --- | --- |
-| 0.6.2 | **0.2.1-rc.3 (current, running — CLI; desktop app still rc.2)** | SDK devDependencies aligned to `0.2.1-rc.3` (cordis 4.0.5, schemastery 3.18.5); peer ranges widened to cover the host `0.2.1` line explicitly — by the semver prerelease tuple rule `^0.2.0-rc.1` does not match `0.2.1-rc.x`. No API drift: typecheck + 214 tests + the #17 lifecycle probe re-run green on rc.3 host components. |
+| 0.7.0 | **0.2.2-rc.1 (current line — CLI and Desktop App)** | Adds pure-JS PPTX presentation parsing, `page_range` slicing, and Markdown structured outputs; passes `plugin-fast-adapt` standards review with a 100/100 score; peerDependencies explicitly cover `^0.2.2-0`; 222/222 tests pass green. |
+| 0.6.2 | 0.2.1-rc.3 | SDK devDependencies aligned to `0.2.1-rc.3` (cordis 4.0.5, schemastery 3.18.5); peer ranges widened to cover the host `0.2.1` line explicitly — by the semver prerelease tuple rule `^0.2.0-rc.1` does not match `0.2.1-rc.x`. No API drift: typecheck + 214 tests + the #17 lifecycle probe re-run green on rc.3 host components. |
 | 0.6.1 | 0.2.1-rc.2 | Attachment-route lifecycle fix (#17: route disposers bound to the injection fiber), lazy parser loading (~200 ms off every host start) and `attachment_list` name filter; same surfaces as 0.6.0. Range unchanged — `^0.2.1-alpha.3` already covers `rc.2` (verified with semver). |
 | 0.6.0 | 0.2.1-alpha.3 | Attachment delete route + shard-scan cache + host-component peer relocation (PR #14); same surfaces as 0.5.x, no new seat dependencies. |
 | 0.5.6 | 0.2.0-rc.2 (measured) | Same SDK alignment as 0.5.5; `package.json` now carries machine-readable metadata: `repository`, `engines` (Node ≥ 20), and `dsh.compatibility` (`dshReleases` / `dshOperations`). |

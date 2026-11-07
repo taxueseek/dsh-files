@@ -7,8 +7,10 @@ import JSZip from 'jszip'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { parsePdf } from '../src/parse/pdf.ts'
 import { parseDocx } from '../src/parse/docx.ts'
+import { parsePptx } from '../src/parse/pptx.ts'
 import { parseXlsx } from '../src/parse/xlsx.ts'
 import { parseDocument } from '../src/parse/index.ts'
+import { parsePageRange } from '../src/parse/range.ts'
 import { decodeText, windowLines } from '../src/parse/text.ts'
 
 async function makePdf(text: string): Promise<Uint8Array> {
@@ -245,4 +247,92 @@ test('utf-16le without BOM decodes as a fallback', () => {
   // 被拒绝后走无 BOM UTF-16 兜底。
   const bytes = new Uint8Array([0x68, 0x00, 0x69, 0x00])
   assert.equal(decodeText(bytes), 'hi')
+})
+
+test('parsePageRange parses ranges, de-duplicates and clamps to boundaries', () => {
+  assert.deepEqual(parsePageRange('1-3, 5, 2', 10), [1, 2, 3, 5])
+  assert.deepEqual(parsePageRange('8-12', 10), [8, 9, 10])
+  assert.deepEqual(parsePageRange('2', 5), [2])
+  assert.throws(() => parsePageRange('invalid', 5), /invalid page number/)
+  assert.throws(() => parsePageRange('5-2', 5), /invalid page range segment/)
+  assert.throws(() => parsePageRange('15', 5), /yielded no valid pages/)
+})
+
+async function makeMultiPagePdf(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const p1 = doc.addPage([400, 300])
+  p1.drawText('Page One Content', { x: 50, y: 250, size: 14, font, color: rgb(0, 0, 0) })
+  const p2 = doc.addPage([400, 300])
+  p2.drawText('Page Two Secret', { x: 50, y: 250, size: 14, font, color: rgb(0, 0, 0) })
+  return new Uint8Array(await doc.save())
+}
+
+test('pdf pageRange extracts only the specified page', async () => {
+  const bytes = await makeMultiPagePdf()
+  const all = await parsePdf(bytes)
+  assert.match(all, /Page One Content/)
+  assert.match(all, /Page Two Secret/)
+
+  const onlyPage2 = await parsePdf(bytes, { pageRange: '2' })
+  assert.doesNotMatch(onlyPage2, /Page One Content/)
+  assert.match(onlyPage2, /Page Two Secret/)
+})
+
+async function makePptx(hasText = true): Promise<Uint8Array> {
+  const zip = new JSZip()
+  zip.file('[Content_Types].xml', `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/><Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/></Types>`)
+  zip.file('_rels/.rels', `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/></Relationships>`)
+  zip.file('ppt/presentation.xml', `<?xml version="1.0"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:sldIdLst><p:sldId id="256" r:id="rId1"/><p:sldId id="257" r:id="rId2"/></p:sldIdLst></p:presentation>`)
+  zip.file('ppt/_rels/presentation.xml.rels', `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/></Relationships>`)
+
+  if (hasText) {
+    const slide1Xml = `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Quarterly Strategy</a:t></a:r></a:p></p:txBody></p:sp><p:graphicFrame><a:tbl><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Item</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>Target</a:t></a:r></a:p></a:txBody></a:tc></a:tr><a:tr><a:tc><a:txBody><a:p><a:r><a:t>Revenue</a:t></a:r></a:p></a:txBody></a:tc><a:tc><a:txBody><a:p><a:r><a:t>$10M</a:t></a:r></a:p></a:txBody></a:tc></a:tr></a:tbl></p:graphicFrame></p:spTree></p:cSld></p:sld>`
+    const slide2Xml = `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>Slide Two Roadmap</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`
+    zip.file('ppt/slides/slide1.xml', slide1Xml)
+    zip.file('ppt/slides/slide2.xml', slide2Xml)
+  } else {
+    zip.file('ppt/slides/slide1.xml', `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>`)
+    zip.file('ppt/slides/slide2.xml', `<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree/></p:cSld></p:sld>`)
+  }
+
+  return new Uint8Array(await zip.generateAsync({ type: 'nodebuffer' }))
+}
+
+test('pptx text and table extraction with markdown table', async () => {
+  const bytes = await makePptx(true)
+  const md = await parsePptx(bytes, { outputFormat: 'markdown' })
+  assert.match(md, /### Slide 1 \/ 2/)
+  assert.match(md, /Quarterly Strategy/)
+  assert.match(md, /\| Item \| Target \|/)
+  assert.match(md, /\| Revenue \| \$10M \|/)
+  assert.match(md, /### Slide 2 \/ 2/)
+  assert.match(md, /Slide Two Roadmap/)
+})
+
+test('pptx pageRange filters slides', async () => {
+  const bytes = await makePptx(true)
+  const slide1 = await parsePptx(bytes, { pageRange: '1' })
+  assert.match(slide1, /Quarterly Strategy/)
+  assert.doesNotMatch(slide1, /Slide Two Roadmap/)
+
+  const slide2 = await parsePptx(bytes, { pageRange: '2' })
+  assert.doesNotMatch(slide2, /Quarterly Strategy/)
+  assert.match(slide2, /Slide Two Roadmap/)
+})
+
+test('pptx blank/image-only presentation returns visual hint', async () => {
+  const bytes = await makePptx(false)
+  const text = await parsePptx(bytes)
+  assert.match(text, /没有可提取的文本内容|视觉/)
+})
+
+test('parseDocument dispatches pptx format', async () => {
+  const bytes = await makePptx(true)
+  const result = await parseDocument(bytes, 'pptx', {
+    sheetRowLimit: 10,
+    pageRange: '2'
+  })
+  assert.match(result, /Slide Two Roadmap/)
+  assert.doesNotMatch(result, /Quarterly Strategy/)
 })

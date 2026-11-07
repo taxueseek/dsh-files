@@ -18,6 +18,10 @@ export interface ParseOptions {
   sheet?: number
   /** XLSX 专用：只列 sheet 名，不读单元格。 */
   listOnly?: boolean
+  /** 1-based 页码范围（如 "1-3, 5"）；PDF 与 PPTX 专用。 */
+  pageRange?: string
+  /** 结构化输出风格：默认为 'markdown'，可选 'text'。 */
+  outputFormat?: 'markdown' | 'text'
 }
 
 export async function parseDocument(
@@ -25,15 +29,19 @@ export async function parseDocument(
   format: DocumentFormat,
   options: ParseOptions
 ): Promise<string> {
-  // sheet/listOnly 只对 xlsx 有意义：对 PDF/DOCX/text 显式报错，防止调用方
+  // sheet/listOnly 只对 xlsx 有意义：对 PDF/DOCX/PPTX/text 显式报错，防止调用方
   // 以为 sheet 参数生效而拿到完整（未按 sheet 过滤）内容。
   if ((options.sheet !== undefined || options.listOnly === true) && format !== 'xlsx') {
     throw new Error(`sheet/listOnly parameters are only supported for XLSX files (format: ${format})`)
   }
+  // pageRange 只对具有天然分页/幻灯片概念的 PDF 与 PPTX 有意义。
+  if (options.pageRange !== undefined && format !== 'pdf' && format !== 'pptx') {
+    throw new Error(`page_range parameter is only supported for PDF and PPTX files (format: ${format})`)
+  }
   switch (format) {
     case 'pdf': {
       const { parsePdf } = await import('./pdf.ts')
-      return parsePdf(bytes)
+      return parsePdf(bytes, { pageRange: options.pageRange, outputFormat: options.outputFormat })
     }
     case 'doc': {
       const { parseDoc } = await import('./doc.ts')
@@ -41,7 +49,11 @@ export async function parseDocument(
     }
     case 'docx': {
       const { parseDocx } = await import('./docx.ts')
-      return parseDocx(bytes)
+      return parseDocx(bytes, { outputFormat: options.outputFormat })
+    }
+    case 'pptx': {
+      const { parsePptx } = await import('./pptx.ts')
+      return parsePptx(bytes, { pageRange: options.pageRange, outputFormat: options.outputFormat })
     }
     case 'xlsx': {
       const { parseXlsx } = await import('./xlsx.ts')

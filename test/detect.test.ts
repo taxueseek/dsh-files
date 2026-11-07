@@ -23,6 +23,12 @@ const XLSX_FILES = {
   'xl/worksheets/sheet1.xml': '<worksheet/>'
 }
 
+const PPTX_FILES = {
+  '[Content_Types].xml': '<Types/>',
+  'ppt/presentation.xml': '<p:presentation/>',
+  'ppt/slides/slide1.xml': '<p:sld/>'
+}
+
 test('pdf signature wins over a spoofed .docx hint', async () => {
   const bytes = new TextEncoder().encode('%PDF-1.7\n1 0 obj\n%%EOF')
   assert.equal(sniffFormat(bytes, 'docx'), 'pdf')
@@ -36,6 +42,11 @@ test('zip with word/ members is docx', async () => {
 test('zip with xl/ members is xlsx', async () => {
   const bytes = await makeZip(XLSX_FILES)
   assert.equal(sniffFormat(bytes), 'xlsx')
+})
+
+test('zip with ppt/ members is pptx', async () => {
+  const bytes = await makeZip(PPTX_FILES)
+  assert.equal(sniffFormat(bytes), 'pptx')
 })
 
 test('zip with neither word/ nor xl/ members is rejected', async () => {
@@ -92,6 +103,7 @@ test('zipMemberNames returns member list and rejects truncated archives', async 
 test('formatFromExtension covers the supported set', () => {
   assert.equal(formatFromExtension('report.pdf'), 'pdf')
   assert.equal(formatFromExtension('a.DOCX'), 'docx')
+  assert.equal(formatFromExtension('slides.pptx'), 'pptx')
   assert.equal(formatFromExtension('data.xlsx'), 'xlsx')
   assert.equal(formatFromExtension('notes.md'), 'text')
   assert.equal(formatFromExtension('noextension'), null)
@@ -99,7 +111,7 @@ test('formatFromExtension covers the supported set', () => {
 })
 
 test('SUPPORTED_FORMATS matches the enum union', () => {
-  assert.deepEqual([...SUPPORTED_FORMATS].sort(), ['doc', 'docx', 'pdf', 'text', 'xlsx'])
+  assert.deepEqual([...SUPPORTED_FORMATS].sort(), ['doc', 'docx', 'pdf', 'pptx', 'text', 'xlsx'])
 })
 
 test('utf-16 without BOM is detected as text', () => {

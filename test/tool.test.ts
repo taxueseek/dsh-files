@@ -17,11 +17,13 @@ test('xlsx gets three-quarters of the base budget', () => {
 test('pdf and docx get half the base budget', () => {
   assert.equal(formatOutputBudget('pdf', 24000), 12000)
   assert.equal(formatOutputBudget('docx', 24000), 12000)
+  assert.equal(formatOutputBudget('pptx', 24000), 12000)
 })
 
 test('the halving never drops below the floor for a tiny base', () => {
   assert.equal(formatOutputBudget('pdf', 3000), 2000) // Math.max(2000, floor(1500))
   assert.equal(formatOutputBudget('docx', 2000), 2000)
+  assert.equal(formatOutputBudget('pptx', 2000), 2000)
   assert.equal(formatOutputBudget('xlsx', 2000), 2000) // floor(1500) clamped to 2000
 })
 
@@ -81,5 +83,22 @@ test('read_document still rejects files over maxFileBytes with FS_TOO_LARGE', as
   await assert.rejects(
     tool.execute({ file_path: 'over.bin' }, exec),
     (err: unknown) => err instanceof FsError && err.code === 'FS_TOO_LARGE'
+  )
+})
+
+test('read_document rejects page_range on non-paged files (text)', async () => {
+  const fs = {
+    resolve: async () => ({ targetKey: FsTargetKey('k-txt'), displayPath: '/workspace/doc.txt' }),
+    stat: async () => ({ version: FsVersion('v1'), type: 'file', size: 100 }),
+    readBytes: async () => new TextEncoder().encode('plain text content')
+  }
+  const tool = defineReadDocumentTool(
+    { fs, emit: () => undefined },
+    { readLimit: 800, maxFileBytes: 1024 * 1024, sheetRowLimit: 200, maxSheets: 5, maxOutputChars: 24000 }
+  )
+  const exec = { signal: new AbortController().signal, agent: undefined } as unknown as Parameters<typeof tool.execute>[1]
+  await assert.rejects(
+    tool.execute({ file_path: 'doc.txt', page_range: '1-2' }, exec),
+    (err: unknown) => err instanceof FsError && err.message.includes('page_range parameter is only supported for PDF and PPTX files')
   )
 })

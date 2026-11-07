@@ -1,6 +1,31 @@
 # Changelog
 
-## 0.6.3 — 2026-10-26
+## 0.7.0 — 2026-11-07
+
+### 文档智能与格式增强（吸纳 dsh-docs 精华，奥卡姆剃刀轻量内聚落地）
+
+- **PPTX 演示文稿解析（纯 JS，零额外 Native 依赖）**：
+  - 基于已有的 `jszip` 引擎按播放顺序流式解析 PresentationML 幻灯片正文、段落与表格。
+  - 表格智能转换为 Markdown 表格（`| col1 | col2 |`），模型理解结构更精确。
+- **定向页码切片（`page_range`）**：
+  - `read_document` 工具新增可选 `page_range` 参数（如 `"1-3, 5"`）。
+  - 在 `pdf` 与 `pptx` 中生效，仅抽取指定页码/幻灯片，显著节约长文档的 Token 预算；非分页格式（`xlsx`/`docx`/`text`）传入显式报错防呆。
+- **结构化输出风格（`output_format`）**：
+  - 新增 `output_format: 'markdown' | 'text'`（默认为 `markdown`）。
+  - DOCX 输出结构化 Markdown 标题、加粗与表格；XLSX 输出标准 Markdown 表格。
+- **扫描件与纯图视觉引导**：
+  - 遇到无文本层的扫描件 PDF 或纯图 PPTX 时，显式引导使用 DSH 0.1.3+ 宿主原生多模态视觉能力识读，无需在本地安装数百 MB 的 Python / Tesseract OCR 离线包。
+
+### 宿主兼容与版本对齐：0.2.2-rc.1（当前官方最新发货线）
+
+- **全面适配官方最新 `0.2.2-rc.1`**：本机 CLI 与桌面 App 均为 `0.2.2-rc.1`（官方 latest / next 最新通道）。
+- **通过 `/plugin-fast-adapt` 深度防御性审查**：
+  - 常设规则得分 **100/100**（机械可判 7 条 0 违规，零 top-level-await，零未声明 inject）。
+  - 架构体检 **100/100**（性能 100 / 弹性 100 / 上下文预算 100 / 生命周期 100）。
+  - Cordis 内存冒烟通过（耗时 22ms）。
+  - 222 项全量单元测试与回归测试通过。
+- `dshReleases` 记录 `0.2.2-rc.1: compatible`；`peerDependencies` 显式覆盖 `^0.2.2-0`。
+
 
 ### 客户端注入面收窄
 

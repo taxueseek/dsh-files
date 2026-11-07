@@ -2,7 +2,16 @@
 
 import mammoth from 'mammoth'
 
-export async function parseDocx(bytes: Uint8Array): Promise<string> {
-  const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) })
+export interface DocxParseOptions {
+  outputFormat?: 'markdown' | 'text'
+}
+
+export async function parseDocx(bytes: Uint8Array, options: DocxParseOptions = {}): Promise<string> {
+  const buf = Buffer.from(bytes)
+  if (options.outputFormat === 'text') {
+    const result = await mammoth.extractRawText({ buffer: buf })
+    return result.value
+  }
+  const result = await mammoth.convertToMarkdown({ buffer: buf })
   return result.value
 }

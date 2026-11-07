@@ -14,6 +14,7 @@ export interface XlsxParseOptions {
   sheet?: number
   /** 只列 sheet 名，不读任何单元格。 */
   listOnly?: boolean
+  outputFormat?: 'markdown' | 'text'
 }
 
 function cellText(value: unknown): string {
@@ -30,6 +31,28 @@ function cellText(value: unknown): string {
 
 function rowsToText(rows: unknown[][]): string {
   return rows.map((row) => row.map(cellText).join('\t').replace(/\s+$/, '')).join('\n')
+}
+
+function rowsToMarkdown(rows: unknown[][]): string {
+  if (rows.length === 0) return ''
+  const sanitized = rows.map((row) => row.map(cellText))
+  const maxCols = Math.max(...sanitized.map((r) => r.length), 0)
+  if (maxCols === 0) return ''
+  const padded = sanitized.map((r) => {
+    const copy = [...r]
+    while (copy.length < maxCols) copy.push('')
+    return copy
+  })
+  const header = padded[0]
+  const headerLine = `| ${header.map((c) => c.replace(/\|/g, '\\|')).join(' | ')} |`
+  const sepLine = `| ${header.map(() => '---').join(' | ')} |`
+  const dataLines = padded.slice(1).map((r) => `| ${r.map((c) => c.replace(/\|/g, '\\|')).join(' | ')} |`)
+  return [headerLine, sepLine, ...dataLines].join('\n')
+}
+
+function formatRows(rows: unknown[][], format?: 'markdown' | 'text'): string {
+  if (format === 'markdown') return rowsToMarkdown(rows)
+  return rowsToText(rows)
 }
 
 export async function parseXlsx(bytes: Uint8Array, options: XlsxParseOptions): Promise<string> {
@@ -53,7 +76,7 @@ export async function parseXlsx(bytes: Uint8Array, options: XlsxParseOptions): P
     }
     const sheet = sheetNames[idx - 1]
     const rows = await readXlsxFile(buf, { sheet })
-    return [`### Sheet: ${String(sheet)}（全量，共 ${rows.length} 行）`, rowsToText(rows)].join('\n\n')
+    return [`### Sheet: ${String(sheet)}（全量，共 ${rows.length} 行）`, formatRows(rows, options.outputFormat)].join('\n\n')
   }
 
   const maxSheets = options.maxSheets ?? 5
@@ -69,7 +92,7 @@ export async function parseXlsx(bytes: Uint8Array, options: XlsxParseOptions): P
     totalRows += rows.length
     const kept = rows.slice(0, options.sheetRowLimit)
     if (rows.length > kept.length) sheetTruncated = true
-    parts.push(`### Sheet: ${String(sheet)}\n${rowsToText(kept)}`)
+    parts.push(`### Sheet: ${String(sheet)}\n${formatRows(kept, options.outputFormat)}`)
   }
 
   // 多 sheet 但被 maxSheets 截断
