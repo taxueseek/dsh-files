@@ -23,13 +23,6 @@ You have probably hit both:
 
 dsh-files fills exactly those two holes. **Read**: the AI gets the text out of PDF / Word / Excel. **Fetch back**: you and the AI both see what is in the store, and you can pull a file back out.
 
-## What changed in this release
-
-- **SDK aligned with the host at 0.2.0-rc.2**: fixes "the plugin button is missing and native upload is dead in the desktop App" — the plugin used to be built against the old SDK, colliding with the host's newer bundled components in the client module graph
-- **Errors now speak plainly**: a failure used to hand you a cold error code; now it tells you **what to change next**. Reach the server over your LAN and the attachment routes answer 403 — the response prints the exact `trustedHosts` line to add, ready to copy
-- **LAN / domain deployments are documented now**: that section used to be blank, leaving you to guess
-- **The division of work with the host is written down**: what the host already does (upload, images, document preview) versus what remains unique to this plugin — so the wheel is not reinvented
-
 ---
 
 Here is a file's **four-stage session lifecycle**, one official gap filled per stage:
@@ -39,7 +32,17 @@ Here is a file's **four-stage session lifecycle**, one official gap filled per s
 - **Manage**: the **`attachment_list` / `export_attachment` tools** plus **in-panel delete** — make the attachment store visible to the model (name/size/sha) and copy a file into the workspace for read/edit/bash to work on; the panel also removes a single attachment (the store is no longer append-only)
 - **Fetch back**: the **attachment dock** (one official pill below the composer card) plus download/export routes and an `@` attachment source — the store becomes visible to users and files can be pulled into the browser (the right path for remote/LAN deployments); the `@` menu inserts the official handle line, identical to what the model saw at upload
 
-> Upload, images and `@` reference were removed in 0.5.0 — harness 0.1.3 ships them natively (universal file upload, the image vision pipeline, unified `@file`/`@session` reference), and does it better. This plugin is part of the [taxueseek plugin matrix](https://github.com/taxueseek#deepseek-harness-%E6%8F%92%E4%BB%B6); the flagship is [argo](https://github.com/taxueseek/argo).
+<details>
+<summary>What changed in this release</summary>
+
+- **SDK aligned with the host at 0.2.0-rc.2**: fixes "the plugin button is missing and native upload is dead in the desktop App" — the plugin used to be built against the old SDK, colliding with the host's newer bundled components in the client module graph
+- **Errors now speak plainly**: a failure used to hand you a cold error code; now it tells you **what to change next**. Reach the server over your LAN and the attachment routes answer 403 — the response prints the exact `trustedHosts` line to add, ready to copy
+- **LAN / domain deployments are documented now**: that section used to be blank, leaving you to guess
+- **The division of work with the host is written down**: what the host already does (upload, images, document preview) versus what remains unique to this plugin — so the wheel is not reinvented
+
+</details>
+
+> Upload, images and `@` reference were removed in 0.5.0 — harness 0.1.3 ships them natively (universal file upload, the image vision pipeline, unified `@file`/`@session` reference), and does it better. This plugin is part of the [taxueseek ecosystem](https://github.com/taxueseek).
 
 ## Why it exists
 
